@@ -443,3 +443,95 @@
 7. 会话 token 无过期，但**服务端重启会全部失效**，App 要做好 401 自动重登。
 8. 站内阅读：`GET /api/tasks/{id}/text` 拿正文，不需要自己拼 `/dl/`。
 
+
+---
+
+## 9. 域名与路由确证（SSH 第三轮，2026-10-03 15:50 +0800）
+
+> 单次 SSH。transcript：`ssh-recon-transcript-3.log`。全程只读。
+
+### 9.1 重大发现：双隧道、双服务，novel.sswwgzs.cn ≠ 主站
+
+服务器上**同时跑着两个 cloudflared 实例**（systemd 各管一个），分别用不同配置文件、不同隧道 ID，分流到不同后端：
+
+| systemd 服务 | 配置文件 | 隧道 ID | ingress hostname | 本地服务 |
+|---|---|---|---|---|
+| `cloudflared.service`（主站） | `/etc/cloudflared/config.yml` | `84682cd5-...` | **`morax.sswwgzs.cn`**<br>**`morax.kdns.fr`** | `https://localhost:8080`（docker nginx → Go 主站） |
+| `cloudflared-booksource.service`（书源工具） | `/etc/cloudflared/config-booksource.yml` | `4ffe5f18-...` | **`novel.sswwgzs.cn`**<br>`dygz.kdns.fr` | `http://localhost:8000`（**FastAPI 书源管理工具**） |
+| （备份） `/root/tomato-site/config.yml` | 旧配置，当前未被任何进程加载 | `84682cd5-...` | dl.1979.kdns.fr、morax.kdns.fr | 同主站 |
+
+**进程证据**（`ps aux`）：
+- `/usr/local/bin/cloudflared --config /etc/cloudflared/config-booksource.yml tunnel run` → 监听 127.0.0.1:20242（书源工具隧道）
+- `/usr/bin/cloudflared --config /etc/cloudflared/config.yml tunnel run` → 监听 127.0.0.1:20241（主站隧道）
+
+### 9.2 域名 → 服务映射表（QuickApp 对接用）
+
+| 公网域名 | 实际后端 | 用途 | QuickApp 应对接？ |
+|---|---|---|---|
+| **`morax.sswwgzs.cn`** | Go 主站（docker nginx :8080 → Go :8080） | 摩柿小说**用户主站** | ✅ **推荐默认 apiBase** |
+| `morax.kdns.fr` | 同上（别名） | 同上 | ✅ 备用 |
+| `novel.sswwgzs.cn` | **FastAPI 书源管理工具（:8000）** | 站长自用的书源测试/管理后台 | ❌ 不对接（是后台工具，不是用户端） |
+| `dygz.kdns.fr` | 同上（FastAPI:8000） | 书源工具别名 | ❌ |
+| `dl.1979.kdns.fr` | 主站（旧配置残留） | 监控聚合入口 | ❌ |
+| `sswwgzs.cn`（裸域） | **服务器无任何配置** | 待用户确证是否在 CF 控制台单独配了 CNAME | ❓ 待用户确证 |
+
+**这解释了为什么前两轮前端调研在 novel.sswwgzs.cn 上看到的错误体像 FastAPI**——因为 novel.sswwgzs.cn 本来就是 FastAPI 书源管理工具的入口，根本不是 Go 主站。QuickApp 对接用户端必须把 apiBase 从 `https://novel.sswwgzs.cn` 改成 **`https://morax.sswwgzs.cn`**。
+
+### 9.3 nginx 配置全文要点（与第二轮一致，再确认）
+
+`/root/tomato-site/nginx.conf` 只有一个 server 块 `listen 443 ssl http2`，**无 server_name 分流**（任意 Host 都接受，靠 cloudflared 层做域名区分）：
+- `location = /sitemap.xml /robots.txt /baidu_verify_*.html` → 静态文件
+- `location /` → `proxy_pass http://app:8080`（Go 容器），透传 Host/X-Forwarded-*
+- `location /monitor` → 192.168.16.1:18080，Basic Auth
+- `location /monitor-api` → 192.168.16.1:18080/api/status，无认证
+- **没有 `/api/`、`/dl/`、`/downloads/` 专用 location**，全部走 `/` 兜底到 Go
+
+### 9.4 路由存在性实测（服务器本地 curl，https://127.0.0.1:8080）
+
+| 路径 | GET | POST | 结论 |
+|---|---|---|---|
+| `/api/me` | **200** | — | 公开，未登录返回 `{"user":null}` |
+| `/api/search` | **200** | — | 公开，未登录返回 `{"items":[]}` |
+| `/api/tasks` | **401** | **401** | 需登录；POST 即创建任务（不是 /api/download） |
+| `/api/bookshelf` | **401** | — | 需登录 |
+| `/api/login` | 404 | —（未测 POST） | POST-only（路由表确证 `POST /api/login`） |
+| **`/api/download`** | **404** | 405 | **不存在！** 前端调研里的 `/api/download` 是 FastAPI 书源工具的接口，Go 主站没有 |
+| **`/api/settings`** | **404** | 405 | **不存在！** 同上，是 FastAPI 书源工具的接口 |
+| `/api/me` 未登录响应体 | — | — | `{"user":null}` |
+| `/api/search?keyword=test` 未登录响应体 | — | — | `{"items":[]}` |
+
+> 注：POST 到不存在路径返回 405 是 Go 1.22 ServeMux fallthrough 噪音（被 `/` 兜底匹配到 index handler），不代表路由存在。
+
+### 9.5 代码级确证
+
+- `grep -rn '/api/download' /root/tomato-site/backend/` **零命中**——Go 后端完全没有 `/api/download` 这个路径。
+- 路由注册（handlers.go mux）只出现 `/api/tasks`、`/api/tasks/{id}`、`/api/tasks/{id}/text`，没有 `/api/download`。
+- 创建下载任务 = `POST /api/tasks`（body 传 book_url/book_id 等）。
+
+### 9.6 前端调研（在 novel.sswwgzs.cn 上做的）与主站实际的差异总结
+
+| 前端调研观察（novel.sswwgzs.cn，FastAPI:8000） | 主站实际（morax.sswwgzs.cn，Go） |
+|---|---|
+| `POST /api/login` | 同名，存在（Go） |
+| `GET /api/me` | 同名，存在（Go，未登录 `{"user":null}`） |
+| `GET /api/tasks` | 同名，存在（Go，需登录） |
+| `GET /api/search` | 同名，存在（Go，公开） |
+| **`POST /api/download`** | **不存在**；主站用 `POST /api/tasks` |
+| **`GET /api/settings`** | **不存在**；主站只有 admin 侧 `GET/POST /api/admin/settings` |
+| `download_url` 形如 `/downloads/...` | 主站实际是 **`/dl/...`**（FastAPI 书源工具用 `/downloads/`） |
+| 鉴权 Bearer token | 两边都支持；主站另外种 session cookie |
+
+### 9.7 待用户确证项（服务器无法回答）
+
+1. **裸域 `sswwgzs.cn`**：服务器上无任何 nginx/隧道配置指向它。需要用户去 Cloudflare 控制台确认是否配了 CNAME 指向本隧道；若没配，裸域当前不可用。
+2. **`novel.sswwgzs.cn` 业务定位**：服务器证据表明它是**站长自用的 FastAPI 书源管理后台**，不是面向 C 端用户的主站。请用户确认：QuickApp 要对接的是 C 端用户场景（→ 用 `morax.sswwgzs.cn`），还是站长管理场景（→ 用 `novel.sswwgzs.cn`）。
+3. **CF 控制台侧 ingress 规则**：隧道域名绑定在 CF Zero Trust 控制台也可能有 dashboard-managed 规则（不在 config.yml 里）。服务器本地只能看到 config.yml 里写的 4 个 hostname。
+4. **DNS 解析 IP**：服务器未装 `dig`，本次未做公网 DNS 解析。用户可本地 `nslookup morax.sswwgzs.cn` 确认落在 Cloudflare anycast 段。
+
+### 9.8 QuickApp apiBase 最终建议
+
+- **默认**：`https://morax.sswwgzs.cn`
+- **备选**：`https://morax.kdns.fr`
+- **不要**：`https://novel.sswwgzs.cn`（那是后台工具）
+- 所有接口路径用 §8.3 的 Go 主站路由表，不要沿用前端调研在 novel.sswwgzs.cn 上看到的 `/api/download`、`/api/settings`。
+

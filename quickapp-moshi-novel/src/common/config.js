@@ -4,13 +4,16 @@
  * 所有后端地址、字段映射、本地存储键名、大小限制都集中在此文件，
  * 做到「一处修改、全局生效」。
  *
- * 【依据】接口事实来自 shared/backend-api-notes.md（2026-10-03 公开观察实测）：
- *   - 全部 API 位于书源站 https://novel.sswwgzs.cn（主站 sswwgzs.cn 仅为工作室门户）
- *   - 鉴权：Authorization: Bearer <token>（已确认）
- *   - 登录 POST /api/login → { token, user }（token 为顶层字段，已确认）
- *   - 无独立「书架」：书架 = 当前用户下载任务列表 GET /api/tasks → { tasks: [...] }
- *   - 下载是异步任务流：GET /api/search → POST /api/download → 轮询 /api/tasks
- *     直到 state==done → 取 download_url 直链下载 TXT
+ * 【依据】接口事实来自 shared/backend-api-notes.md（含 §9 第三轮服务器侦察 + 沙盒公网实测）：
+ *   - 【§9 关键修正：两套隧道两个站点】
+ *     · morax.sswwgzs.cn / morax.kdns.fr → Go 主站（隧道 → localhost:8080）= C 端用户主站，推荐 apiBase
+ *       公网实测：HTTP 200、/api/me 返回 {"user":null}、/api/login 仅 POST（GET→404）、/api/search GET→200。
+ *     · novel.sswwgzs.cn / dygz.kdns.fr → FastAPI 书源管理工具（隧道 → localhost:8000）= 站长自用后台，
+ *       不是用户端；早先网页调研看到的 /api/download、{results,count} 等都是该后台接口，不作主站默认。
+ *   - 鉴权：Authorization: Bearer <token>（已确认）；登录 POST /api/login → { token, user }。
+ *   - 书架=下载任务列表 GET /api/tasks → { tasks: [...] }；另 /api/bookshelf 为收藏夹（401，字段待核实）。
+ *   - 下载是异步任务流：GET /api/search → POST /api/tasks 提交 → 轮询 /api/tasks → done 后取 /dl/ 直链。
+ *   - 【§9 搜索响应字段】主站实测为 { items: [...] }（非后台的 {results,count}），见 field.searchListPath。
  * 仍未确证的点继续标注「待核实」。
  * ----------------------------------------------------------------------------
  */
@@ -36,29 +39,26 @@ export default {
   },
 
   // ====== 后端服务地址（双基址，可切换） ======
-  // 默认基址：公开网页前端真实运行、最贴近用户实际访问的 API（公开实测）。
-  apiBase: 'https://novel.sswwgzs.cn',
-  // 备选基址：服务器 SSH 实测的 Go 主后端隧道域名（cloudflared 指向宿主 8080→nginx→Go 容器）。
-  // 证据：§8.1 云隧道 config.yml 仅配了 dl.1979.kdns.fr / morax.kdns.fr；
-  //       且服务器 nginx 与 Go 代码里 grep 不到 sswwgzs.cn 任何引用（§8.1）。
-  // 【待定】公共域名 novel.sswwgzs.cn 与隧道域名 morax.kdns.fr 的最终对应关系需用户确认；
-  //       若真机连不上默认基址，把 apiBase 临时切换为 apiBaseAlt 即可（业务代码无需改）。
+  // 【§9 确证】C 端用户主站 = Go 主站（隧道 → localhost:8080），公网实测 200/me 返回 user:null。
+  apiBase: 'https://morax.sswwgzs.cn',
+  // 备选基址：主站的隧道直连域名（同一 Go 主站，备用）。
   apiBaseAlt: 'https://morax.kdns.fr',
-  mainSite: 'https://sswwgzs.cn',         // 主站门户（仅 FAQ/说明，应用不直接调用）
+  // 注意：novel.sswwgzs.cn / dygz.kdns.fr 是 FastAPI 书源【站长自用后台】（:8000），
+  //       不是用户端；早先看到的 /api/download、{results,count} 均为该后台接口，勿用作主站默认。
+  mainSite: 'https://sswwgzs.cn',         // 裸域：服务器零配置（需 CF 控制台，待用户确证）
 
-  // ====== 接口路径（已确认/待核实见注释） ======
+  // ====== 接口路径（§8.3/§9 实测，Go 主站路由） ======
   endpoints: {
-    login: '/api/login',          // 登录 POST（§8.3 Go 路由表已确认：无中间件）
-    logout: '/api/logout',       // 登出 POST（§8.4 已确认：Logout 真删内存 session，token 真正作废）
-    me: '/api/me',               // 当前用户 GET（已确认：未登录也返回，需判 data.user 是否为 null）
-    bookshelf: '/api/tasks',     // 书架=下载任务列表 GET（§8.3 已确认：requireLogin）
-    search: '/api/search',       // 搜索 GET（§8.3 已确认：公开免鉴权）
-    // 提交下载任务：网页前端 JS 实测为 POST /api/download；服务器 Go 路由表实测为 POST /api/tasks
-    // （requireLogin→requireEnabled，§8.3/§8.9 第 4 条）。默认用网页实测版；若该 404，改为下面 downloadAlt。
-    download: '/api/download',
-    downloadAlt: '/api/tasks',
-    // 站内正文阅读源（可选）：GET /api/tasks/{id}/text（需登录），
-    // 不经过 /dl/ 直链；{id} 为任务 id（任务对象 id 字段名待核实）。
+    login: '/api/login',          // 登录 POST（§9 实测：GET→404，仅 POST）
+    logout: '/api/logout',       // 登出 POST（§8.4：真删内存 session，token 作废）
+    me: '/api/me',               // 当前用户 GET（§9 实测：未登录返回 {"user":null}）
+    bookshelf: '/api/tasks',     // 书架=下载任务列表 GET（§8.3：requireLogin）
+    favorites: '/api/bookshelf', // 收藏夹 GET（存在但 401，字段结构待核实；当前未用）
+    search: '/api/search',       // 搜索 GET（§9 实测 200，公开；响应字段为 items，见 field.searchListPath）
+    // 提交下载任务：默认 POST /api/tasks（§8.3/§9：requireLogin→requireEnabled）。
+    // （旧 /api/download 是 FastAPI 后台接口，主站 404，已移除默认。）
+    download: '/api/tasks',
+    // 站内正文阅读源（可选）：GET /api/tasks/{id}/text（需登录），{id} 字段名待核实。
     taskText: '/api/tasks/{id}/text'
   },
 
@@ -75,7 +75,8 @@ export default {
 
   // ====== 响应 / 业务字段映射 ======
   field: {
-    booksListPath: 'tasks',        // 已确认：书架数组在响应 tasks 字段下
+    booksListPath: 'tasks',        // 已确认：书架(下载任务)数组在响应 tasks 字段下
+    searchListPath: 'items',       // §9 实测：搜索结果数组在响应 items 字段（非后台的 results）
     // 任务对象没有稳定数字 id（已确认字段中无 id），本地以 book_name 作为书籍主键（待核实稳定性）
     bookId: 'book_name',           // 本地主键字段（已确认书名字段为 book_name/title）
     bookName: 'book_name',         // 已确认：书名（前端兼容 title）

@@ -50,15 +50,18 @@ jobs:
         with:
           node-version: '18'
 
-      - name: 安装依赖并打包 rpk
+      - name: 安装依赖并打包 rpk（CI 只产 debug 包）
         # 用项目内 npm install + npx，而非全局安装：
         # GH Runner 上 aiot-toolkit 全局安装（npm -g）曾因路径/权限失败；
         # 本地安装经 package.json 的 devDependencies 锁版本，可复现性更好。
+        # CI 只产 debug rpk（aiot build 用工具链自带调试证书，不依赖仓库私钥），
+        # 不再吞错（去掉 || true）。正式 release 为本地受控操作，
+        # 见 quickapp-moshi-novel/README.md「正式签名发布」章节（需本地私钥）。
+        # 可选：若配置 GitHub secret（如 MOSHI_SIGN_PRIVATE_KEY），可在本地注入私钥临时出 release。
         working-directory: quickapp-moshi-novel
         run: |
           npm install --no-audit --no-fund
           npx aiot build
-          npx aiot release || true
 
       - name: 上传 rpk 产物
         uses: actions/upload-artifact@v4

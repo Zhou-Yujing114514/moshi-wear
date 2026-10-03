@@ -55,9 +55,14 @@ quickapp-moshi-novel/
 
 ## 三、构建 / 打包 / 安装（已用 aiot-toolkit 真实构建验证）
 
-> 本沙盒已用 `aiot-toolkit@2.0.5`（npm npmmirror 源）**真实构建出 .rpk 并签名**。产物在 `dist/`：
-> - `cn.sswwgzs.moshi.novel.debug.1.0.0.rpk`（约 30KB，工具链自带调试证书签名）
-> - `cn.sswwgzs.moshi.novel.release.1.0.0.rpk`（约 22KB，本工程 `sign/` 自签证书签名）
+> 本沙盒已用 `aiot-toolkit@2.0.5`（npm npmmirror 源）**真实构建出 .rpk 并签名**。
+> **证书已于 2026-10-03 重建**（旧私钥曾误推公开仓库，旧证书/旧包全部作废重签）：
+> - 新 release 证书主题 `CN=mosshi-quickapp-v2`，SHA256 指纹
+>   `20:FA:C7:48:D9:B3:67:AB:C3:6A:96:1E:20:A1:B7:8E:ED:A3:34:5B:40:A5:F2:2A:F7:A3:97:6C:AD:FE:EE:E9`
+> - 当前 `dist/` 产物（新证书重签后）：
+>   - `cn.sswwgzs.moshi.novel.release.1.0.0.rpk` — **23519 B**，SHA256 `f37e04e44155f11fc8602f3c8b1ad710b4d3103d439790aa85f5f641c7b8be74`
+>   - `cn.sswwgzs.moshi.novel.debug.1.0.0.rpk` — **30923 B**，SHA256 `8f6202210a60e3ec710446770d4886c4b16282916aec4871f8cc4e9083779183`
+>   - 重签后两包 `META-INF/CERT` 的 SHA256 均与旧包不同（旧 release CERT `991f3fc5…` → 新 `3bf2785d…`）。
 
 1. **装依赖**：项目根新建 `.npmrc` 写入 `registry="https://registry.npmmirror.com/"`，执行
    `npm i`（依赖 `aiot-toolkit`）。
@@ -65,9 +70,10 @@ quickapp-moshi-novel/
    - 开发包：`npx aiot build` → 生成 `dist/*.debug.rpk` + `build/`
    - 生产包：`npx aiot release` → 用 `sign/` 证书生成 `dist/*.release.rpk`
    - 重签名已有 build：`npx aiot resign`
-3. **签名**：本工程 `sign/private.pem` + `sign/certificate.pem` 已用 openssl 自签（10 年）。
-   生产正式发布请替换为你自己的证书；release 模式强制校验 `sign/` 下证书，缺失会报
-   「problem with the certification path」。
+3. **签名与 CI 策略**：`sign/private.pem`（权限 600，已被 `.gitignore` 屏蔽）+ `sign/certificate.pem`。
+   - **CI 只产 debug 包**（`aiot build`，用工具链自带调试证书，无需私钥）；
+   - **正式 release 为本地受控操作**（`aiot release`，需本地 `sign/` 私钥，私钥绝不入 CI/仓库）。
+   - release 模式强制校验 `sign/` 下证书，缺失会报「problem with the certification path」。
 4. **模拟器调试**：`npx aiot createVVD` 创建 Vela 虚拟设备；banner 选设备后运行/调试。
 5. **安装到手环 9 Pro**（**以下真机通道待核实**，沙盒无手环）：
    - 手环开启「开发者模式 / 调试」，用 ADB 连接（`adb connect <手环IP>:5555`）。
@@ -81,42 +87,47 @@ quickapp-moshi-novel/
 
 > 该笔记为 2026-10-03 公开观察实测；仍未确证项继续在代码里标注「待核实」。
 
-**已确认并已落地（公开观察 + 两轮 SSH 只读服务器实读 §7/§8）：**
-- **基址（双基址可切换）**：默认 `https://novel.sswwgzs.cn`（网页前端真实运行、最贴近用户实际访问）；
-  备选 `https://morax.kdns.fr`（§8.1 云隧道 config.yml 实测的 Go 主后端隧道域名）。
-  ⚠️ 服务器 nginx 与 Go 代码里 grep 不到 `sswwgzs.cn` 任何引用（§8.1），公共域名与隧道域名的最终对应关系**待用户确认**；
-  真机连不上默认基址时，改 `config.js` 的 `apiBase` 为 `apiBaseAlt` 即可。
-- 鉴权：`Authorization: Bearer <token>`（§8.4 确认；HttpOnly cookie 同样可用，本应用统一用 Bearer）。
+**已确认并已落地（公开观察 + 三轮 SSH 服务器实读 §7/§8/§9 + 沙盒公网实测）：**
+- **【§9 关键：两套隧道两个站点】**
+  - **C 端用户主站（Go，:8080）**：`morax.sswwgzs.cn` / `morax.kdns.fr` —— **`apiBase` 默认**。
+    沙盒公网实测：HTTP 200、`/api/me` 返回 `{"user":null}`、`/api/login` 仅 POST（GET→404）、`/api/search` GET→200。
+  - **站长自用后台（FastAPI，:8000）**：`novel.sswwgzs.cn` / `dygz.kdns.fr` —— **不是用户端**；
+    早先网页调研看到的 `/api/download`、`{results,count}` 等都是该后台接口，**已移出主站默认**。
+- 鉴权：`Authorization: Bearer <token>`（§8.4；HttpOnly cookie 同样可用，本应用统一用 Bearer）。
 - 登录：`POST /api/login`，体 `{username, password}`，响应顶层 `{ token, user }`。
 - 书架 = 下载任务列表：`GET /api/tasks`（§8.3 `requireLogin`），响应 `{ tasks: [...] }`；
-  字段 `book_name`(备 `title`)、`state`(`queued/running/done/failed/canceled`)、`progress`(0~100)、
-  `download_url`(备 `url`)、`source_name`。
-- 搜书：`GET /api/search?keyword=<URL编码>&max_sources=100`（§8.3 公开免鉴权）。
-- 提交下载任务：**双端点可配置**——默认网页实测 `POST /api/download`；服务器 Go 路由实测为 `POST /api/tasks`
-  （§8.3/§8.9，`requireLogin→requireEnabled`），配置项 `endpoints.downloadAlt`。404 时切换。
+  字段 `book_name`(备 `title`)、`state`、`progress`(0~100)、`download_url`(备 `url`)、`source_name`。
+  另有 `GET /api/bookshelf`（收藏夹，存在但 401，字段待核实，当前未用）。
+- 搜书：`GET /api/search?keyword=<URL编码>&max_sources=100`（§9 实测 200，公开）；
+  **响应字段为 `{ items: [...] }`**（非后台 `{results,count}`），已用 `config.field.searchListPath` 配置化并适配 `search.ux`。
+- 提交下载任务：**默认 `POST /api/tasks`**（§8.3/§9，`requireLogin→requireEnabled`）；
+  旧 `POST /api/download` 是 FastAPI 后台接口（主站 404），已移除默认。
+- `/api/settings`：主站 404（仅 admin 有 `/api/admin/settings`），已从主站默认移除。
 
 **服务器实读补充（§7/§8）：**
 - **token 机制**：进程内存随机串、**非 JWT、无过期时间**；但**服务端重启会全部失效**（§8.4）。
   App 对 401 已做「回登录页」处理；会话有效期与「下载链接 TTL」是两回事，勿混淆。
-- **下载链接**：§8.5 实测 `download_url` 为**相对路径 `/dl/<url编码路径>`**（不是 `/downloads/`）；
-  `http.js` 的 `getText` 已自动按「基址 + 相对路径」拼接，带 Bearer 访问，两种形态都兼容。
+- **下载链接**：§8.5 实测 `download_url` 为**相对路径 `/dl/<url编码路径>`**；
+  `http.js` 的 `getText` 已自动按「基址 + 相对路径」拼接，带 Bearer 访问。
   另有站内正文源 `GET /api/tasks/{id}/text`（需登录），已在 `config.js` 注释为可选阅读源。
-- **限流**：官方限流「5 分钟 15 本」（§8.9），提交过快要提示稍后再试。
+- **限流**：「5 分钟 15 本」（§8.9），提交过快要提示稍后再试。
 - **下载链接 TTL**：`download_ttl_hours` 控制，过期后 `download_url` 变**空字符串**（§8.4/§8.9）；
   书架已按「done 且非空」才显示可下载，空串时需重新触发下载。
 
 **后端部署地图摘要（§7.1/§8.2/§8.3，服务器 SSH 只读实读）：**
 - 公网入口 **Cloudflare 隧道**（`cloudflared`）→ 宿主 `:8080`（HTTPS）→ Docker 容器 `tomato-site-nginx-1`（nginx:alpine）。
 - nginx 单 server 块，**无独立 `/api/`、`/downloads/` location**，全部 `proxy_pass` 到内网 Go 容器 `tomato-site-app-1:8080`
-  （源码 `/root/tomato-site/backend/*.go`，标准库 `http.ServeMux`）。**主站是 Go，不是 FastAPI**（推翻早先推断）。
+  （源码 `/root/tomato-site/backend/*.go`，标准库 `http.ServeMux`）。**主站是 Go，不是 FastAPI**。
 - 书源抓取引擎容器 `tomato-site-tomato-1`（内网 18423）：`/dl/` 由它代理流式回吐 TXT。
 - `/root/booksource-site` 下 **FastAPI :8000 是站长自用的书源管理工具，不是用户访问的主站**。
 - 数据：纯 JSON 文件（`users.json`/`tasks.json`/`config.json`），无 SQLite/BoltDB。
 
-**仍待核实（改 `common/config.js` 即可，无需动业务代码）：**
-- 公共域名 `novel.sswwgzs.cn` 与隧道 `morax.kdns.fr` 的最终对应关系。
+**仍待用户确证（改 `common/config.js` 即可，无需动业务代码）：**
+- 裸域 `sswwgzs.cn`（服务器零配置，需 Cloudflare 控制台接入）。
+- 业务定位最终确认（C 端主站 Go vs 站长后台 FastAPI）。
+- Cloudflare Dashboard ingress 与 DNS 记录配置。
 - 任务对象 id 字段名（站内正文 `/api/tasks/{id}/text` 需用到）；本地暂以 `book_name` 作主键。
-- `/dl/` 响应是否纯 TXT（还是 zip/包装）、限流超限错误体、`/api/download` vs `/api/tasks` 在默认域名下哪个生效。
+- `/dl/` 响应是否纯 TXT（还是 zip/包装）、限流超限错误体。
 
 ---
 

@@ -140,10 +140,11 @@ export default {
     this.searching = true
     this.queried = true
     try {
-      // 已确认：GET /api/search?keyword=<URL编码>&max_sources=100，免鉴权
+      // §9：GET /api/search?keyword=<URL编码>&max_sources=100，主站公开；响应数组在 items 字段
       const url = config.endpoints.search + '?keyword=' + encodeURIComponent(kw) + '&max_sources=100'
       const res = await request(url, { method: 'GET', auth: false })
-      const rawList = pickByPath(res, 'results') || []
+      // §9 实测主站为 { items:[...] }（非后台 {results,count}）；字段名可配置在 config.field.searchListPath
+      const rawList = pickByPath(res, config.field.searchListPath) || []
       // 规整出展示用字段：书名/作者/书源/书籍页 URL
       this.results = rawList.map((r) => ({
         name: r.name || '未命名',
