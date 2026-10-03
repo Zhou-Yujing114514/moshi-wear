@@ -1,0 +1,126 @@
+<template>
+  <!-- 摩柿小说 登录页（手环竖屏） -->
+  <div class="page">
+    <text class="brand">摩柿小说</text>
+    <text class="sub">登录后同步书架与下载</text>
+
+    <input class="field" type="text" placeholder="用户名" value="{{username}}" onchange="onUserChange" />
+    <input class="field" type="password" placeholder="密码" value="{{password}}" onchange="onPwdChange" />
+
+    <input class="btn {{logging ? 'btn-disabled' : ''}}" type="button" value="{{logging ? '登录中…' : '登 录'}}" onclick="doLogin" />
+
+    <text class="err" if="{{error}}">{{error}}</text>
+  </div>
+</template>
+
+<style>
+  .page {
+    flex-direction: column;
+    align-items: center;
+    width: 336px;
+    padding: 40px 24px 24px 24px;
+  }
+  .brand {
+    font-size: 30px;
+    color: #f2c14e;
+    margin-bottom: 8px;
+  }
+  .sub {
+    font-size: 13px;
+    color: #8a93a0;
+    margin-bottom: 32px;
+  }
+  .field {
+    width: 288px;
+    height: 44px;
+    background-color: #1c2128;
+    border-radius: 10px;
+    color: #ffffff;
+    font-size: 16px;
+    padding-left: 14px;
+    margin-bottom: 16px;
+  }
+  .btn {
+    width: 288px;
+    height: 46px;
+    background-color: #f2c14e;
+    color: #1c2128;
+    font-size: 18px;
+    border-radius: 10px;
+    margin-top: 8px;
+  }
+  .btn-disabled {
+    background-color: #5a5f66;
+    color: #cfd3d8;
+  }
+  .err {
+    font-size: 13px;
+    color: #ff6b6b;
+    margin-top: 16px;
+    text-align: center;
+  }
+</style>
+
+<script>
+import router from '@system.router'
+import prompt from '@system.prompt'
+import config from '../../common/config.js'
+import { request, pickByPath } from '../../common/http.js'
+import { saveSession } from '../../common/session.js'
+
+/**
+ * 登录页逻辑
+ * 输入用户名+密码 → POST /api/user/login（待核实）→ 解析 token → 持久化 → 跳转书架
+ */
+export default {
+  private: {
+    username: '',
+    password: '',
+    logging: false,
+    error: ''
+  },
+
+  onUserChange(e) {
+    this.username = e.value || ''
+  },
+  onPwdChange(e) {
+    this.password = e.value || ''
+  },
+
+  doLogin() {
+    if (this.logging) return
+    if (!this.username || !this.password) {
+      this.error = '请输入用户名和密码'
+      return
+    }
+    this.error = ''
+    this.logging = true
+
+    // 待核实：登录请求体 {username,password}，响应含 token（顶层或 data.token）
+    request(config.endpoints.login, {
+      method: 'POST',
+      auth: false,
+      data: { username: this.username, password: this.password }
+    })
+      .then((res) => {
+        // 待核实：令牌字段。loginTokenPath（如 'data.token'）优先；否则取顶层字段 loginTokenField
+        const token = config.auth.loginTokenPath
+          ? pickByPath(res, config.auth.loginTokenPath)
+          : res[config.auth.loginTokenField]
+        if (!token) {
+          throw new Error('登录响应未包含 token（字段待核实）')
+        }
+        saveSession(token, this.username)
+        prompt.showToast({ message: '登录成功', duration: 1500 })
+        // 登录成功后替换栈底为书架页，避免返回登录页
+        router.replace({ uri: '/', params: { ___PARAM_LAUNCH_FLAG___: 'clearTask' } })
+      })
+      .catch((err) => {
+        this.error = '登录失败：' + (err && err.message ? err.message : '网络错误')
+      })
+      .finally(() => {
+        this.logging = false
+      })
+  }
+}
+</script>

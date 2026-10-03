@@ -1,0 +1,171 @@
+<template>
+  <!-- 摩柿小说 离线阅读器：按固定字符数分页，支持上/下翻页 -->
+  <div class="page">
+    <div class="head">
+      <text class="back" onclick="goBack">‹ 返回</text>
+      <text class="pager">{{pageNo}}/{{totalPages}}</text>
+    </div>
+
+    <div class="content" onclick="onTapContent">
+      <text class="txt" if="{{ready}}">{{currentText}}</text>
+      <text class="txt" if="{{!ready}}">{{loadingTip}}</text>
+    </div>
+
+    <div class="bar">
+      <input class="nav" type="button" value="上一页" onclick="prevPage" />
+      <input class="nav" type="button" value="下一页" onclick="nextPage" />
+    </div>
+  </div>
+</template>
+
+<style>
+  .page {
+    flex-direction: column;
+    width: 336px;
+    height: 480px;
+    padding: 16px;
+  }
+  .head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .back {
+    font-size: 14px;
+    color: #5aa9ff;
+  }
+  .pager {
+    font-size: 14px;
+    color: #8a93a0;
+  }
+  .content {
+    flex: 1;
+    background-color: #1c2128;
+    border-radius: 10px;
+    padding: 14px;
+  }
+  .txt {
+    font-size: 16px;
+    color: #e6e9ee;
+    line-height: 24px;
+  }
+  .bar {
+    flex-direction: row;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+  .nav {
+    width: 150px;
+    height: 42px;
+    background-color: #2a2f37;
+    color: #ffffff;
+    font-size: 16px;
+    border-radius: 10px;
+  }
+</style>
+
+<script>
+import router from '@system.router'
+import prompt from '@system.prompt'
+import file from '@system.file'
+import config from '../../common/config.js'
+import { bookFileUri, findBook, updateProgress } from '../../common/library.js'
+import { splitPages, clampPage } from '../../common/reader.js'
+
+/**
+ * 阅读器逻辑
+ * 入参（router.push params，见 shelf 页）：bookId、bookName
+ * 读本地 TXT → 按 charsPerPage 切页 → 翻页 → 进度持久化
+ */
+export default {
+  // 应用内传参：需在 protected 下声明与 params 同名的 key
+  protected: {
+    bookId: '',
+    bookName: ''
+  },
+
+  private: {
+    ready: false,
+    loadingTip: '加载中…',
+    pages: [],
+    totalPages: 1,
+    pageIndex: 0,
+    pageNo: 1,
+    currentText: ''
+  },
+
+  onInit() {
+    this.loadBook()
+  },
+
+  async loadBook() {
+    const uri = bookFileUri(this.bookId)
+    try {
+      const data = await new Promise((resolve, reject) => {
+        file.readText({
+          uri: uri,
+          encoding: 'utf-8',
+          success: (res) => resolve(res.text || ''),
+          fail: (err, code) => reject(new Error('读取失败 code=' + code))
+        })
+      })
+      const cpp = config.limits.charsPerPage
+      this.pages = splitPages(data, cpp)
+      this.totalPages = this.pages.length
+      // 恢复上次阅读进度
+      const meta = await findBook(this.bookId)
+      const startPage = meta ? (meta.progressPage || 0) : 0
+      this.pageIndex = clampPage(startPage, this.totalPages)
+      this.applyPage()
+      this.ready = true
+    } catch (err) {
+      this.ready = false
+      this.loadingTip = '书籍读取失败：' + (err.message || '')
+    }
+  },
+
+  /** 应用当前页内容并落进度 */
+  applyPage() {
+    this.pageIndex = clampPage(this.pageIndex, this.totalPages)
+    this.pageNo = this.pageIndex + 1
+    this.currentText = this.pages[this.pageIndex] || ''
+    updateProgress(this.bookId, this.pageIndex)
+  },
+
+  prevPage() {
+    if (this.pageIndex > 0) {
+      this.pageIndex -= 1
+      this.applyPage()
+    }
+  },
+
+  nextPage() {
+    if (this.pageIndex < this.totalPages - 1) {
+      this.pageIndex += 1
+      this.applyPage()
+    } else {
+      prompt.showToast({ message: '已经是最后一页', duration: 1200 })
+    }
+  },
+
+  /** 点屏幕右半边下一页、左半边上一页（手环单手操作） */
+  onTapContent(e) {
+    // 点击落点 x：超过内容区一半视为右半
+    const x = (e && e.touches && e.touches[0] && e.touches[0].clientX) || 0
+    if (x > 168) {
+      this.nextPage()
+    } else {
+      this.prevPage()
+    }
+  },
+
+  goBack() {
+    router.back()
+  },
+
+  onBackPress() {
+    // 右滑返回时默认回书架页，无需特殊处理
+  }
+}
+</script>

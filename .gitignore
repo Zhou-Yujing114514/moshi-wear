@@ -1,0 +1,7 @@
+# 内部侦察产物（含服务器连接信息），不公开
+shared/recon*.py
+shared/ssh-recon-transcript*.log
+
+# 临时/本地文件
+.tmp-*
+*.bak

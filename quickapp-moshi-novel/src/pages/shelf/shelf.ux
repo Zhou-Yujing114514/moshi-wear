@@ -1,0 +1,278 @@
+<template>
+  <!-- 摩柿小说 书架页（首页）= 下载任务列表 + 本地已下载合并展示 -->
+  <div class="page">
+    <div class="head">
+      <text class="title">书架</text>
+      <div class="head-right">
+        <text class="action" onclick="gotoSearch">＋搜书</text>
+        <text class="action" onclick="reload">刷新</text>
+      </div>
+    </div>
+
+    <text class="tip" if="{{loading}}">加载中…</text>
+    <text class="tip" if="{{!loading && books.length === 0}}">暂无书籍，点「＋搜书」下载</text>
+
+    <div class="list">
+      <div class="row" for="{{item in books}}" tid="bookId">
+        <div class="row-main" onclick="onRowTap(item)">
+          <text class="book-name">{{item.bookName}}</text>
+          <text class="book-meta">{{item.subText}}</text>
+        </div>
+        <text class="del" if="{{item.downloaded}}" onclick="onDelete(item)">删</text>
+      </div>
+    </div>
+
+    <text class="tip warn" if="{{busy}}">{{busyTip}}</text>
+  </div>
+</template>
+
+<style>
+  .page {
+    flex-direction: column;
+    width: 336px;
+    padding: 20px 16px 16px 16px;
+  }
+  .head {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .title {
+    font-size: 24px;
+    color: #f2c14e;
+  }
+  .head-right {
+    flex-direction: row;
+  }
+  .action {
+    font-size: 14px;
+    color: #5aa9ff;
+    margin-left: 14px;
+  }
+  .tip {
+    font-size: 14px;
+    color: #8a93a0;
+    margin-top: 20px;
+  }
+  .warn {
+    color: #f2c14e;
+    margin-top: 12px;
+  }
+  .list {
+    flex-direction: column;
+  }
+  .row {
+    flex-direction: row;
+    align-items: center;
+    background-color: #1c2128;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .row-main {
+    flex: 1;
+    flex-direction: column;
+  }
+  .book-name {
+    font-size: 16px;
+    color: #ffffff;
+    margin-bottom: 4px;
+  }
+  .book-meta {
+    font-size: 12px;
+    color: #8a93a0;
+  }
+  .del {
+    font-size: 14px;
+    color: #ff6b6b;
+    padding: 6px 10px;
+  }
+</style>
+
+<script>
+import router from '@system.router'
+import prompt from '@system.prompt'
+import file from '@system.file'
+import config from '../../common/config.js'
+import { request, getText, pickByPath } from '../../common/http.js'
+import { restoreSession, isLoggedIn } from '../../common/session.js'
+import { loadLocalBooks, upsertBook, removeBook, bookFileUri } from '../../common/library.js'
+import { formatSize } from '../../common/reader.js'
+
+// 任务状态 → 中文（已确认状态机：queued/running/done/failed/canceled）
+const STATE_LABEL = {
+  queued: '排队中',
+  running: '下载中',
+  done: '已完成',
+  failed: '失败',
+  canceled: '已取消'
+}
+
+/** 从任务对象按主/备键取值（后端历史上改过键名） */
+function pickTask(raw, mainKey, fallbackKey) {
+  if (raw[mainKey] != null && raw[mainKey] !== '') return raw[mainKey]
+  return raw[fallbackKey]
+}
+
+/**
+ * 书架页逻辑
+ * onShow：校验登录态 → GET /api/tasks → 与本地已下载合并渲染
+ * 点行：本地已有→阅读；任务 done 且有直链→下载 TXT；进行中→提示进度
+ */
+export default {
+  private: {
+    books: [],
+    loading: false,
+    busy: false,
+    busyTip: ''
+  },
+
+  onShow() {
+    restoreSession().then(() => {
+      if (!isLoggedIn()) {
+        router.replace({ uri: '/login' })
+        return
+      }
+      this.loadShelf()
+    })
+  },
+
+  /** 拉取下载任务列表并与本地合并 */
+  async loadShelf() {
+    this.loading = true
+    try {
+      // 已确认：GET /api/tasks，需 Bearer；未带/失效 token 返回 401
+      const res = await request(config.endpoints.bookshelf, { method: 'GET', auth: true })
+      const taskList = pickByPath(res, config.field.booksListPath) || []
+      const localList = await loadLocalBooks()
+      const localMap = {}
+      localList.forEach((b) => { localMap[b.bookId] = b })
+
+      this.books = taskList.map((raw) => {
+        const bookName = pickTask(raw, config.field.bookName, config.field.bookNameFallback) || '未命名'
+        const state = pickTask(raw, config.field.state, config.field.stateFallback) || 'queued'
+        const progress = raw[config.field.progress] != null ? raw[config.field.progress] : 0
+        const downloadUrl = pickTask(raw, config.field.downloadUrl, config.field.downloadUrlFallback) || ''
+        const sourceName = raw[config.field.sourceName] || ''
+        const local = localMap[bookName]
+        const canFetch = state === 'done' && !!downloadUrl
+
+        let subText = sourceName + ' · ' + (STATE_LABEL[state] || state)
+        if (state === 'running' || state === 'queued') subText += ' ' + progress + '%'
+        if (local) subText = '已缓存·读到第' + ((local.progressPage || 0) + 1) + '页'
+        else if (canFetch) subText += ' · 点按下载'
+
+        return {
+          bookId: bookName,           // 本地主键（任务无数字 id，用书名，待核实）
+          bookName: bookName,
+          state: state,
+          progress: progress,
+          downloadUrl: downloadUrl,
+          downloaded: !!local,
+          canFetch: canFetch,
+          subText: subText,
+          localProgressPage: local ? local.progressPage || 0 : 0
+        }
+      })
+    } catch (err) {
+      // 401 → 登录态失效，回登录页；其它错误降级展示本地
+      if (String(err.message).indexOf('HTTP 401') >= 0) {
+        router.replace({ uri: '/login' })
+        return
+      }
+      const localList = await loadLocalBooks()
+      this.books = localList.map((b) => ({
+        bookId: b.bookId,
+        bookName: b.bookName || '未命名',
+        state: 'done',
+        progress: 100,
+        downloadUrl: '',
+        downloaded: true,
+        canFetch: false,
+        subText: '本地·读到第' + ((b.progressPage || 0) + 1) + '页',
+        localProgressPage: b.progressPage || 0
+      }))
+      prompt.showToast({ message: '书架加载失败，仅显示本地', duration: 2000 })
+    } finally {
+      this.loading = false
+    }
+  },
+
+  reload() {
+    this.loadShelf()
+  },
+
+  gotoSearch() {
+    router.push({ uri: '/search' })
+  },
+
+  /** 点行：本地已有→阅读；done 且有直链→下载；进行中→提示 */
+  onRowTap(item) {
+    if (this.busy) return
+    if (item.downloaded) {
+      router.push({ uri: '/reader', params: { bookId: item.bookId, bookName: item.bookName } })
+      return
+    }
+    if (item.state !== 'done' || !item.downloadUrl) {
+      prompt.showToast({ message: '该书' + (item.state === 'failed' ? '下载失败' : '后台处理中 ' + item.progress + '%'), duration: 1500 })
+      return
+    }
+    this.downloadBook(item)
+  },
+
+  /** 下载 TXT：拉直链文本 → 大小校验 → 落盘 internal://files → 写元信息 → 打开阅读 */
+  async downloadBook(item) {
+    this.busy = true
+    this.busyTip = '下载中…'
+    try {
+      const text = await getText(item.downloadUrl)
+      const size = text.length
+      // 手环存储有限：超过上限则中止（阈值在 config.limits.maxBookSizeBytes，可配置）
+      if (size > config.limits.maxBookSizeBytes) {
+        prompt.showToast({
+          message: '文件 ' + formatSize(size) + ' 超过上限，已取消',
+          duration: 2500
+        })
+        return
+      }
+      const uri = bookFileUri(item.bookId)
+      await new Promise((resolve) => {
+        file.mkdir({ uri: config.files.booksDir, success: resolve, fail: resolve })
+      })
+      await new Promise((resolve, reject) => {
+        file.writeText({
+          uri: uri,
+          text: text,
+          encoding: 'utf-8',
+          success: resolve,
+          fail: (err, code) => reject(new Error('写文件失败 code=' + code))
+        })
+      })
+      await upsertBook({
+        bookId: item.bookId,
+        bookName: item.bookName,
+        author: '',
+        size: size,
+        progressPage: 0
+      })
+      prompt.showToast({ message: '下载完成', duration: 1200 })
+      // 下载完成直接进入阅读
+      router.push({ uri: '/reader', params: { bookId: item.bookId, bookName: item.bookName } })
+      this.loadShelf()
+    } catch (err) {
+      prompt.showToast({ message: '下载失败（直链可能过期）', duration: 2500 })
+    } finally {
+      this.busy = false
+      this.busyTip = ''
+    }
+  },
+
+  /** 删除本地书籍 */
+  async onDelete(item) {
+    await removeBook(item.bookId)
+    prompt.showToast({ message: '已删除', duration: 1500 })
+    this.loadShelf()
+  }
+}
+</script>

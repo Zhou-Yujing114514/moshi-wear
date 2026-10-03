@@ -1,0 +1,42 @@
+<script>
+import { restoreSession } from './common/session.js'
+
+/**
+ * 摩柿小说 —— 应用入口（app.ux）
+ * 职责：应用级生命周期回调 + 全局数据/方法。
+ * 进入应用时，从本地持久层恢复登录令牌到内存，供各页面与 http 模块使用。
+ */
+export default {
+  // 暴露给所有页面：页面中可通过 this.$app.$def.xxx 访问
+  data: {
+    // 全局登录态（内存镜像，真实读写走 session.js）
+    token: '',
+    username: ''
+  },
+
+  onCreate() {
+    console.info('摩柿小说 onCreate')
+    // 恢复持久化的会话
+    restoreSession().then((session) => {
+      this.token = session.token || ''
+      this.username = session.username || ''
+    })
+  },
+
+  onShow() {
+    console.info('摩柿小说 onShow')
+  },
+
+  onHide() {
+    console.info('摩柿小说 onHide')
+  },
+
+  onDestroy() {
+    console.info('摩柿小说 onDestroy')
+  },
+
+  onError(err) {
+    console.error('摩柿小说 onError', err)
+  }
+}
+</script>

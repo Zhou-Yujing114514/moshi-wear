@@ -1,0 +1,15 @@
+{
+  "name": "quickapp-moshi-novel",
+  "versionName": "1.0.0",
+  "versionCode": 1,
+  "description": "摩柿小说 Vela 快应用（小米手环 9 Pro）：登录 / 书架 / 下载 TXT / 离线阅读 / 删除",
+  "type": "module",
+  "main": "src/app.ux",
+  "scripts": {
+    "check:json": "echo placeholder",
+    "check:js": "echo placeholder"
+  },
+  "devDependencies": {
+    "@aiot-toolkit": "0.11.1"
+  }
+}

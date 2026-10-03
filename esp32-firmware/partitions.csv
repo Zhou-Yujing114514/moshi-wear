@@ -1,0 +1,8 @@
+# 分区表 (4MB Flash)
+# 名称,   类型,  子类型,  偏移,     大小,    备注
+nvs,      data,  nvs,     0x9000,   0x6000,  # WiFi/BLE/NimBLE 持久化
+otadata,  data,  ota,     0xf000,   0x2000,
+phy_init, data,  phy,     0x11000,  0x1000,
+factory,  app,   factory, 0x20000,  1984K,   # 单 factory 应用（网桥无需 OTA 双分区）
+# 剩余 ~2MB 留给未来扩展 / 静态配置存储
+storage,  data,  spiffs,  ,         0x100000, # 可选：存放提取后的 authkey/配置 JSON

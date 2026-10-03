@@ -1,0 +1,198 @@
+<template>
+  <!-- 摩柿小说 搜书页：搜索 → 选书 → 提交下载任务 -->
+  <div class="page">
+    <div class="head">
+      <text class="back" onclick="goBack">‹ 返回</text>
+      <text class="title">搜书下载</text>
+    </div>
+
+    <div class="search-bar">
+      <input class="kw" type="text" placeholder="输入书名" value="{{keyword}}" onchange="onKwChange" />
+      <input class="go" type="button" value="搜" onclick="doSearch" />
+    </div>
+
+    <text class="tip" if="{{searching}}">搜索中…</text>
+    <text class="tip" if="{{!searching && queried && results.length === 0}}">未找到结果</text>
+
+    <div class="list">
+      <div class="row" for="{{item in results}}" tid="name">
+        <div class="row-main" onclick="onPick(item)">
+          <text class="book-name">{{item.name}}</text>
+          <text class="book-meta">{{item.author}} · {{item.source}}</text>
+        </div>
+      </div>
+    </div>
+
+    <text class="tip warn" if="{{submitting}}">{{submitTip}}</text>
+  </div>
+</template>
+
+<style>
+  .page {
+    flex-direction: column;
+    width: 336px;
+    padding: 20px 16px 16px 16px;
+  }
+  .head {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .back {
+    font-size: 14px;
+    color: #5aa9ff;
+    margin-right: 16px;
+  }
+  .title {
+    font-size: 22px;
+    color: #f2c14e;
+  }
+  .search-bar {
+    flex-direction: row;
+    margin-bottom: 12px;
+  }
+  .kw {
+    flex: 1;
+    height: 42px;
+    background-color: #1c2128;
+    border-radius: 10px;
+    color: #ffffff;
+    font-size: 15px;
+    padding-left: 12px;
+  }
+  .go {
+    width: 56px;
+    height: 42px;
+    background-color: #f2c14e;
+    color: #1c2128;
+    font-size: 16px;
+    border-radius: 10px;
+    margin-left: 8px;
+  }
+  .tip {
+    font-size: 14px;
+    color: #8a93a0;
+    margin-top: 16px;
+  }
+  .warn {
+    color: #f2c14e;
+    margin-top: 12px;
+  }
+  .list {
+    flex-direction: column;
+  }
+  .row {
+    flex-direction: row;
+    align-items: center;
+    background-color: #1c2128;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 10px;
+  }
+  .row-main {
+    flex: 1;
+    flex-direction: column;
+  }
+  .book-name {
+    font-size: 16px;
+    color: #ffffff;
+    margin-bottom: 4px;
+  }
+  .book-meta {
+    font-size: 12px;
+    color: #8a93a0;
+  }
+</style>
+
+<script>
+import router from '@system.router'
+import prompt from '@system.prompt'
+import config from '../../common/config.js'
+import { request, pickByPath } from '../../common/http.js'
+
+/**
+ * 搜书页逻辑
+ * GET /api/search?keyword=（公开免鉴权）→ 列表展示
+ * 点选结果 → POST /api/download 提交下载任务（需 Bearer）→ 回书架刷新
+ */
+export default {
+  private: {
+    keyword: '',
+    results: [],
+    searching: false,
+    queried: false,
+    submitting: false,
+    submitTip: ''
+  },
+
+  onKwChange(e) {
+    this.keyword = e.value || ''
+  },
+
+  /** 搜索（公开接口） */
+  async doSearch() {
+    if (this.searching) return
+    const kw = (this.keyword || '').trim()
+    if (!kw) {
+      prompt.showToast({ message: '请输入书名', duration: 1500 })
+      return
+    }
+    this.searching = true
+    this.queried = true
+    try {
+      // 已确认：GET /api/search?keyword=<URL编码>&max_sources=100，免鉴权
+      const url = config.endpoints.search + '?keyword=' + encodeURIComponent(kw) + '&max_sources=100'
+      const res = await request(url, { method: 'GET', auth: false })
+      const rawList = pickByPath(res, 'results') || []
+      // 规整出展示用字段：书名/作者/书源/书籍页 URL
+      this.results = rawList.map((r) => ({
+        name: r.name || '未命名',
+        author: r.author || '佚名',
+        source: r.source || (r.sources && r.sources[0] && r.sources[0].source) || '',
+        bookUrl: r.book_url || (r.sources && r.sources[0] && r.sources[0].book_url) || ''
+      }))
+    } catch (err) {
+      prompt.showToast({ message: '搜索失败', duration: 2000 })
+      this.results = []
+    } finally {
+      this.searching = false
+    }
+  },
+
+  /** 点选结果：提交下载任务 */
+  async onPick(item) {
+    if (this.submitting) return
+    if (!item.bookUrl) {
+      prompt.showToast({ message: '该书无书籍地址', duration: 1500 })
+      return
+    }
+    this.submitting = true
+    this.submitTip = '提交中…'
+    try {
+      // 已确认：POST /api/download，需 Bearer；请求体 {book_name, author, source_name, book_url}
+      await request(config.endpoints.download, {
+        method: 'POST',
+        auth: true,
+        data: {
+          book_name: item.name,
+          author: item.author === '佚名' ? '' : item.author,
+          source_name: item.source,
+          book_url: item.bookUrl
+        }
+      })
+      prompt.showToast({ message: '已提交，回书架等待完成', duration: 2000 })
+      // 返回书架；书架 onShow 会自动刷新任务列表
+      router.back()
+    } catch (err) {
+      prompt.showToast({ message: '提交失败（可能限流/未登录）', duration: 2000 })
+    } finally {
+      this.submitting = false
+      this.submitTip = ''
+    }
+  },
+
+  goBack() {
+    router.back()
+  }
+}
+</script>
