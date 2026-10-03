@@ -122,8 +122,13 @@ quickapp-moshi-novel/
 
 ## 五、网桥通道（ESP32，绕开机身 fetch 限制）
 
-**为什么需要**：官方支持明细标注手环 9 Pro 对 `@system.fetch`「不支持」。本工程新增网桥通道，
-让手环把 HTTP 请求交给 ESP32 网桥代为发出（与 AstroBox 宿主同构），真机可在 `direct`/`bridge` 间切换。
+**开关与两条路真实可用状态（均未真机验证，勿夸大）**：
+`src/common/config.js` 顶部 `transport: 'direct' | 'bridge'`，默认 `direct`。
+- `direct`：手环本机 `@system.fetch` —— 官方支持明细标注手环 9 Pro「不支持」，**真机是否可用待验**。
+- `bridge`：ESP32 网桥代发 —— 协议层已按固件对齐，但 Vela 侧 `@system.interconnect` 收发原语
+  （`sendToBridge/onBridgeMessage`）尚未确证、待真机填，**当前也不可真用**。
+- **默认选 `direct` 的理由**：它零额外依赖、拿到真机即可第一时间验证；待真机确认本机 fetch 不可用
+  （或网桥硬件就绪、原语填好）再切 `bridge`。切换只改这一行，业务代码无感。
 
 **架构**：
 ```
@@ -132,15 +137,21 @@ QuickApp(.ux) ──@system.互联通道──> ESP32 网桥(qaic.c) ──HTTP�
    bridge.js(信封收发/解码)          代发请求并回包
 ```
 
-**开关**：`src/common/config.js` 顶部 `transport: 'direct' | 'bridge'`（默认 `direct`，改一行即切网桥）。
-
 **与固件 `esp32-firmware/main/qaic.c` 的契约（逐字段已对齐）**：
 - 握手：`{"tag":"__hs__","count":0,"caps":{...}}` → 收 `count:1` → 回 `count:2` → 完成。
 - 请求：`{"tag":"fetch","id":"<n>","url":"<完整URL>","options":{method,headers,body,raw,followRedirects}}`。
 - 单消息响应：`{"tag":"fetch","id","resp":{ok,status,statusText,headers,body,raw,bodyEncoding}}`。
+- 错误帧：`ok:false` + `statusText`；`bridge.js` 已识别并 reject，`http.js` 映射为中文提示。
 - 分片响应：`resp.chunked=true` → 收若干 `{"tag":"fetch-chunk","id","seq","total","data"}`，
   每收一片回 `{"tag":"fetch-ack","id","ack":<下一个缺失连续序号>}`，收齐后逐片 base64 解码再按 UTF-8 拼回。
 - 本端 caps 只声明 `text/base64`、压缩只认 `none`（deflate/lz4 未在手环侧实现，待真机）。
+
+**网桥整包下载上限（固件新增）**：固件整包下载 body 上限 `BR_HTTP_MAX_BODY`（**默认约 128KB**），
+超限固件回错误帧。`bridge.js` 按 `config.bridge.oversizeKeywords` 识别后，`http.js` 抛出
+**「文件过大，超出网桥整包下载上限（约128KB），后续支持分段(Range)下载」**。
+- ⚠️ 该 128KB 上限**只作用于 `bridge` 路径**；`direct` 路径不受此限（direct 受本机 `@system.fetch` 可用性限制）。
+- **待办**：大 TXT 超过网桥整包上限时，后续实现 HTTP `Range` 分段下载（待真机/固件确认 Range 支持后启用）；
+  当前单本仍受 `config.limits.maxBookSizeBytes`（5MB，可配）约束。
 
 **待真机确证（bridge.js 已用「双原语收敛」隔离）**：Vela 手环侧 `@system.interconnect` 的确切
 模块名与 send/onMessage 调用形式无法从公开文档确证。`bridge.js` 顶部只暴露两个函数

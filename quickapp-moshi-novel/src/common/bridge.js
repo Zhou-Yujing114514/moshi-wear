@@ -199,6 +199,15 @@ function finishFetch(id, bodyStr) {
   })
 }
 
+/** 错误帧完成：以 reject 结束，保留 err.bridgeError / err.isOversize 供上层映射文案 */
+function finishFetchError(id, err) {
+  const p = pending[id]
+  if (!p) return
+  clearTimeout(p.timer)
+  delete pending[id]
+  p.reject(err)
+}
+
 /** fetch 响应头（可能是单消息，也可能是分片头） */
 function onFetchResponse(msg) {
   const id = msg.id
@@ -220,8 +229,26 @@ function onFetchResponse(msg) {
     return
   }
 
+  // 固件错误帧：qaic.c send_error 会回 { ok:false, status:0, statusText:<msg> }
+  // （含新增的整包 body 超限：BR_HTTP_MAX_BODY，约 128KB，超限回错误帧）。
+  if (resp.ok === false) {
+    const msg = resp.statusText || 'bridge error'
+    const err = new Error(msg)
+    err.bridgeError = true
+    err.isOversize = isOversizeMessage(msg)
+    finishFetchError(id, err)
+    return
+  }
+
   const body = decodeBody(resp.bodyEncoding, resp.body, resp.compression, resp.raw)
   finishFetch(id, body)
+}
+
+/** 识别固件是否报「整包下载 body 超限」（按关键字，待真机确认确切 statusText 文案） */
+function isOversizeMessage(msg) {
+  const m = String(msg || '').toLowerCase()
+  const kws = (config.bridge && config.bridge.oversizeKeywords) || []
+  return kws.some((k) => m.indexOf(String(k).toLowerCase()) >= 0)
 }
 
 /** fetch-chunk 分片数据帧 */

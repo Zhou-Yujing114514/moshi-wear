@@ -26,7 +26,7 @@ jobs:
           mkdir -p dist
           esptool.py --chip esp32 merge_bin \
             -o dist/esp32-miwear-bridge-v1.0.0.bin \
-            --flash_mode dio --flash_size 4MB --flash_freq 40m \
+            --flash-mode dio --flash-size 4MB --flash-freq 40m \
             0x1000 build/bootloader/bootloader.bin \
             0x8000 build/partition_table/partition-table.bin \
             0x10000 build/miwear_esp_bridge.bin
@@ -50,14 +50,15 @@ jobs:
         with:
           node-version: '18'
 
-      - name: 安装打包工具链
-        run: npm install -g aiot-toolkit@2.0.5
-
-      - name: 打包 rpk
+      - name: 安装依赖并打包 rpk
+        # 用项目内 npm install + npx，而非全局安装：
+        # GH Runner 上 aiot-toolkit 全局安装（npm -g）曾因路径/权限失败；
+        # 本地安装经 package.json 的 devDependencies 锁版本，可复现性更好。
         working-directory: quickapp-moshi-novel
         run: |
-          aiot build
-          aiot release || true
+          npm install --no-audit --no-fund
+          npx aiot build
+          npx aiot release || true
 
       - name: 上传 rpk 产物
         uses: actions/upload-artifact@v4

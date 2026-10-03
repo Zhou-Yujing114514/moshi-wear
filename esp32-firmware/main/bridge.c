@@ -37,53 +37,76 @@ static sar_t           s_sar;
 static mi_handshake_t  s_hs;
 static bool            s_link_up = false;   /* L1 startReq 完成 */
 
-/* ---------- 下行：把一段内层(Account) bytes 经 L2+SAR 发出 ---------- */
+/* ---------- 下行：把一段内层(Account) bytes 经 L2+SAR 发出 ----------
+ * 注意：所有缓冲按实际长度堆分配（原实现用 BR_MPS=64KB 栈数组，
+ * qaic_send_cb→wrap→send_l2 嵌套峰值约 192KB，远超 main 任务栈 8KB，会栈溢出重启）。
+ * sar_send_l2 内部逐帧把数据拷进 SAR 待确认缓冲，返回后本层缓冲即可释放（非 UAF）。 */
 static int send_l2_payload(const uint8_t *inner, size_t inner_len, bool encrypted)
 {
-    uint8_t l2buf[BR_MPS];
-    l2_channel_t ch = L2_CH_PB;
-    l2_opcode_t  op = encrypted ? L2_OP_WRITE_ENC : L2_OP_WRITE;
-
-    /* 若加密：先 CTR 加密内层 */
+    const mi_session_keys_t *k = NULL;
     uint8_t *payload = (uint8_t*)inner;
     size_t   paylen  = inner_len;
     uint8_t *enc_buf = NULL;
     if (encrypted) {
-        const mi_session_keys_t *k = mi_hs_keys(&s_hs);
+        k = mi_hs_keys(&s_hs);
         if (!k) return -1;
-        enc_buf = malloc(inner_len);
+        enc_buf = malloc(inner_len ? inner_len : 1);
+        if (!enc_buf) return -1;
         mi_ctr_crypt(k->enc_key, NULL, inner, enc_buf, inner_len, BR_CTR_IV_USE_KEY);
         payload = enc_buf; paylen = inner_len;
     }
 
-    size_t l2len = l2_encode(l2buf, sizeof(l2buf), ch, op, payload, paylen);
+    l2_channel_t ch = L2_CH_PB;
+    l2_opcode_t  op = encrypted ? L2_OP_WRITE_ENC : L2_OP_WRITE;
+
+    /* L2 头(2B) + payload，按实际长度申请 */
+    size_t   l2cap = L2_HEADER_LEN + paylen;
+    uint8_t *l2buf = malloc(l2cap);
+    if (!l2buf) { free(enc_buf); return -1; }
+
+    size_t l2len = l2_encode(l2buf, l2cap, ch, op, payload, paylen);
     int rc = sar_send_l2(&s_sar, l2buf, l2len);
+    free(l2buf);
     free(enc_buf);
     return rc;
 }
 
-/* 把 JSON 文本包成 WearPacket{Account{QAIC_PAYLOAD: json}} */
-static int wrap_json_to_wearpacket(const char *json, uint8_t *out, size_t out_cap)
+/* 把 JSON 文本包成 WearPacket{Account{QAIC_PAYLOAD: json}}。
+ * 返回堆分配字节（调用者 free），失败返回 NULL。长度按 jsonlen+protobuf 堆开销申请。 */
+static uint8_t *build_wearpacket(const char *json, size_t *out_len)
 {
-    pbuf_t w; pbuf_init(&w, out, out_cap);
-    /* Account { ACC_FIELD_QAIC_PAYLOAD: json bytes } */
-    if (!pbuf_bytes(&w, ACC_FIELD_QAIC_PAYLOAD, json, strlen(json))) return -1;
-    /* WearPacket { WP_FIELD_INNER: Account } */
-    uint8_t wp[BR_MPS];
-    pbuf_t ww; pbuf_init(&ww, wp, sizeof(wp));
-    if (!pbuf_bytes(&ww, WP_FIELD_INNER, out, pbuf_len(&w))) return -1;
-    memcpy(out, wp, pbuf_len(&ww));
-    return (int)pbuf_len(&ww);
+    size_t jlen = strlen(json);
+    /* 两层 protobuf 包装开销很小（每层 key 1B + 长度 varint ≤5B），预留 64B 余量足够 */
+    size_t cap  = jlen + 64;
+    uint8_t *acc = malloc(cap);
+    uint8_t *wp  = malloc(cap);
+    if (!acc || !wp) { free(acc); free(wp); return NULL; }
+
+    pbuf_t wa; pbuf_init(&wa, acc, cap);
+    if (!pbuf_bytes(&wa, ACC_FIELD_QAIC_PAYLOAD, (const uint8_t*)json, jlen)) {
+        free(acc); free(wp); return NULL;
+    }
+    size_t alen = pbuf_len(&wa);
+
+    pbuf_t ww; pbuf_init(&ww, wp, cap);
+    if (!pbuf_bytes(&ww, WP_FIELD_INNER, acc, alen)) {
+        free(acc); free(wp); return NULL;
+    }
+    *out_len = pbuf_len(&ww);
+    free(acc);
+    return wp;
 }
 
 /* QAIC 下行发送回调 */
 static int qaic_send_cb(const char *json, void *ctx)
 {
     (void)ctx;
-    uint8_t wp[BR_MPS];
-    int n = wrap_json_to_wearpacket(json, wp, sizeof(wp));
-    if (n < 0) return -1;
-    return send_l2_payload(wp, n, /*encrypted=*/ mi_hs_keys(&s_hs) != NULL);
+    size_t wlen = 0;
+    uint8_t *wp = build_wearpacket(json, &wlen);
+    if (!wp) return -1;
+    int rc = send_l2_payload(wp, wlen, /*encrypted=*/ mi_hs_keys(&s_hs) != NULL);
+    free(wp);
+    return rc;
 }
 
 /* 握手发送回调（明文） */

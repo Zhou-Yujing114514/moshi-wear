@@ -61,7 +61,9 @@ static void local_caps(caps_t *c)
     c->chunk = true;
     c->maxChunkSize = CHUNK_SIZE_MAX;   /* §3.3 对外声明 65536 */
     c->enc_base64 = c->enc_hex = c->enc_text = true;
-    c->cmp_none = c->cmp_deflate = c->cmp_lz4 = true;
+    /* 本固件仅支持 none 压缩（下行不真压缩，标签须与数据一致） */
+    c->cmp_none = true;
+    c->cmp_deflate = c->cmp_lz4 = false;
     c->ack = true;
     c->ackWindow = DEFAULT_ACK_WINDOW;
     c->stream = true;
@@ -249,9 +251,9 @@ static void on_handshake(const cJSON *j)
         cJSON_AddItemToArray(enc, cJSON_CreateString("text"));
         cJSON_AddItemToObject(c, "encodings", enc);
         cJSON *cmp = cJSON_CreateArray();
+        /* 仅协商 none：本固件下行不真压缩（encode_bytes 不接 zlib/lz4），
+         * 标签必须与实际数据一致——若声称 deflate/lz4，手环按该算法解压原文会损坏。 */
         cJSON_AddItemToArray(cmp, cJSON_CreateString("none"));
-        cJSON_AddItemToArray(cmp, cJSON_CreateString("deflate"));
-        cJSON_AddItemToArray(cmp, cJSON_CreateString("lz4"));
         cJSON_AddItemToObject(c, "compressions", cmp);
         cJSON_AddBoolToObject(c, "ack", true);
         cJSON_AddNumberToObject(c, "ackWindow", DEFAULT_ACK_WINDOW);
@@ -492,7 +494,8 @@ static void on_fetch_ack(const cJSON *j)
         t->base = a;
         pump_window(t);                          /* 窗口前移补发 */
     }
-    /* 停滞但有在途 → go-back-N 重发整窗（每个停滞点只重传一次，简化实现） */
+    /* 注：本实现收到滞后 ACK 不主动 go-back-N 重传，丢片仅靠
+     * qaic_tick 的 30s 超时清理兜底（注释与行为一致）。 */
     if (t->base >= t->chunk_count) {
         ESP_LOGI(TAG_FETCH_RESP, "transfer %s complete", t->id);
         free(t->data); t->active = false;
@@ -547,11 +550,13 @@ static void send_stream_frame(qstream_t *st, uint64_t offset,
 /* 从 HTTP 源流读出一窗数据并发送（背压：只在 ACK 前沿前移时补读） */
 static void pump_stream(qstream_t *st, int window_chunks, int chunk_size)
 {
-    /* 简化：每次补读一个 chunk_size；真实实现应控制在窗口内 */
-    uint8_t buf[DEFAULT_CHUNK_SIZE];
+    /* 简化：每次补读一个 chunk_size；真实实现应控制在窗口内。
+     * 按 chunk_size 堆分配（原为 4KB 栈数组，深调用链下吃 main 任务栈）。 */
+    uint8_t *buf = malloc(DEFAULT_CHUNK_SIZE);
+    if (!buf) return;
     while (st->next_offset < (uint64_t)http_bridge_stream_total(st->stream)
            || http_bridge_stream_total(st->stream) < 0) {
-        int n = http_bridge_stream_read(st->stream, st->next_offset, buf, sizeof(buf));
+        int n = http_bridge_stream_read(st->stream, st->next_offset, buf, DEFAULT_CHUNK_SIZE);
         if (n < 0) {
             /* 错误帧（§6.4） */
             cJSON *o = cJSON_CreateObject();
@@ -559,10 +564,12 @@ static void pump_stream(qstream_t *st, int window_chunks, int chunk_size)
             cJSON_AddStringToObject(o, "id", st->id);
             cJSON_AddStringToObject(o, "message", "read streaming body failed");
             send_json(o);
+            free(buf);
             return;
         }
         if (n == 0) {
             send_stream_frame(st, st->next_offset, NULL, 0, true); /* 结束帧 */
+            free(buf);
             return;
         }
         send_stream_frame(st, st->next_offset, buf, n, false);
@@ -570,6 +577,7 @@ static void pump_stream(qstream_t *st, int window_chunks, int chunk_size)
         /* 背压：单窗内发一帧即等 ACK（真机可按 window_chunks 批量） */
         break;
     }
+    free(buf);
     (void)window_chunks; (void)chunk_size;
 }
 
@@ -706,6 +714,13 @@ static void on_fetch(const cJSON *j)
                                follow ? MAX_REDIRECTS : 0, &r);
     if (headers_json) free((void*)headers_json);
 
+    if (rc == -2) {
+        /* body 超 BR_HTTP_MAX_BODY：回明确错误帧（而非空 body/OOM） */
+        send_error(cJSON_IsString(id)?id->valuestring:NULL,
+                   "response body too large for buffer");
+        http_result_free(&r);
+        return;
+    }
     if (rc != 0 || r.status == 0) {
         send_error(cJSON_IsString(id)?id->valuestring:NULL, "http request failed");
         http_result_free(&r);

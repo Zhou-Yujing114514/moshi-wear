@@ -50,6 +50,14 @@ function sendRaw({ url, method, headers, body, asJson }) {
         }
         return { code: r.status, headers: r.headers, data: data }
       })
+      .catch((err) => {
+        // 网桥整包 body 超限（固件 BR_HTTP_MAX_BODY，约128KB）→ 清晰中文提示。
+        // 注意：此上限仅作用于 bridge 路径；direct 路径不受此限（direct 受本机 @system.fetch 可用性限制）。
+        if (err && err.isOversize) {
+          throw new Error((config.bridge && config.bridge.oversizeTip) || '文件过大，超出网桥整包下载上限')
+        }
+        throw err
+      })
   }
   // 直连通道
   return new Promise((resolve, reject) => {

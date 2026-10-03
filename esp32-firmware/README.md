@@ -102,12 +102,34 @@ python3 -m esptool --chip esp32 -p /dev/ttyUSB0 -b 921600 \
 | 项 | 值 |
 |---|---|
 | 路径 | `esp32-firmware/dist/esp32-miwear-bridge-v1.0.0.bin` |
-| 大小 | 1,194,240 字节（0x123900，约 1.14 MB，**远小于 4 MB**） |
+| 大小 | 1,194,816 字节（0x123b40，约 1.14 MB，**远小于 4 MB**） |
 | 各偏移 magic | 0x1000=0xE9(bootloader)、0x8000=0xAA(分区表)、0x10000=0xE9(app)，0x0 为 0xFF 填充 |
-| SHA256 | `f0931999bd993719277882ebcdcb34002013f76d887213e1f0e9501b90a9cb45` |
+| SHA256 | `92084e070dd983b1757826f6bacd314169be6b218b65b43c7c0e929e6a572af1` |
 
 > 注：对合并 bin 直接 `image_info` 会报「invalid magic 0xff」——因为 0x0 起首是填充、真正镜像在 0x1000 起。
 > 这是多区域合并镜像的正常现象；烧到 0x0 后由 bootloader 正常引导。单 app 镜像 `image_info` 校验有效（见 §8）。
+
+### 3.4 第三方静态审查修复（本轮）
+
+按第三方审查核实并修复（均不改变协议字节格式/常量，仅修内存安全与协商一致性）：
+
+- **🔴 栈溢出（最高优先）**：`bridge.c` 原 `l2buf[BR_MPS]`、`wp[BR_MPS]` 三处 64KB 栈数组，
+  调用链 `qaic_send_cb→build_wearpacket→send_l2_payload` 嵌套峰值约 192KB，远超 main 任务栈，一发数据即 panic。
+  已全部改为**按实际长度堆分配**（`malloc` + 错误路径 `free`；`sar_send_l2` 内部逐帧拷贝进 SAR 待确认缓冲，
+  返回后本层缓冲即可释放，无 UAF）。`qaic.c` 流补读的 `buf[DEFAULT_CHUNK_SIZE]`(4KB) 同样改堆。
+  另把 `CONFIG_ESP_MAIN_TASK_STACK_SIZE` 提到 **16384**（并去掉重复的两行配置）。
+- **🔴 HTTP body 无上限**：`acc_push` 原无限 realloc。现已加 **`BR_HTTP_MAX_BODY = 128KB`** 硬上限
+  （ESP32 可用堆约 200~300KB，单请求留 128KB 可容纳并发≤8；超限不 OOM，返回 `-2`，
+  qaic 层据此向手环回 `"response body too large for buffer"` 错误帧）。
+  chunked 响应原代码因 `if(!is_chunked_response)` 而 body 为空——**已改为无条件累积 ON_DATA**
+  （IDF 已剥掉分块帧，ON_DATA 即解码后载荷）；content-length 与累积量不一致时记日志不判失败。
+- **🟠 协商一致性**：本地 caps `compressions` 由 `["none","deflate","lz4"]` 改为**仅 `["none"]`**
+  （下行不真压缩，标签必须与数据一致，否则手环按 deflate 解压原文会损坏）；本地 `cmp_deflate/cmp_lz4=false`，
+  `pick_plan` 不会再选到压缩。`on_fetch_ack` 注释由「go-back-N 重传」改为与实现一致的「丢片仅靠 30s 超时兜底」。
+  `codec.c` 的 deflate/lz4 解压接口保留但明确标注「未启用（协商仅 none）」。
+
+> 整包下载上限 = `BR_HTTP_MAX_BODY`（v1/v3 及当前 v4 简化整包缓冲同受此限），超限回明确错误；
+> MB 级内容需后续实现真正的 v4 增量流或 QuickApp 端 Range 分段（列入 §8 待办）。
 
 ---
 

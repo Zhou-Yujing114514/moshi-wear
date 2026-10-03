@@ -52,8 +52,13 @@
 #define BR_DEVICE_TYPE          0x01
 #define BR_DEVICE_NAME          "ESP32Bridge"
 
-/* HTTP 桥：单次 fetch 的最大响应缓冲（v1/v3 非流式），字节 */
-#define BR_HTTP_MAX_BODY        (64 * 1024)
+/*
+ * HTTP 桥：单次 fetch 整包下载的最大响应缓冲（v1/v3 非流式，及当前 v4 简化整包缓冲）。
+ * 设为 128KB：ESP32 可用堆约 200~300KB，单请求留 128KB 可在多并发(≤8)下仍有余量；
+ * 下载超此值不会 OOM，而是返回明确错误向手环回错误帧（http_bridge_fetch 返回 -2）。
+ * MB 级内容需后续实现真正的 v4 增量流或 QuickApp 端 Range 分段（见 README 待办）。
+ */
+#define BR_HTTP_MAX_BODY        (128 * 1024)
 /* HTTP 桥：全局并发 v4 流上限（笔记 §6.4 = 8） */
 #define BR_MAX_CONCURRENT_STREAMS 8
 

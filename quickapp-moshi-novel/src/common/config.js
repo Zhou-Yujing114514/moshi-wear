@@ -16,10 +16,24 @@
  */
 export default {
   // ====== 网络通道开关（关键） ======
-  // 'direct'：手环本机 @system.fetch（官方支持明细里手环 9 Pro 标「不支持」，可能真机不可用）
-  // 'bridge'：经 ESP32 网桥（bridge.js，FetchBridge 协议）代为联网，绕开本机 fetch 限制。
-  // 真机联调时改这一行即可，业务代码无感。默认 direct。
+  // 两条路当前真实可用状态（均未真机验证，勿夸大）：
+  //   'direct'：手环本机 @system.fetch —— 官方支持明细标注手环 9 Pro「不支持」，真机是否可用待验。
+  //   'bridge'：经 ESP32 网桥代为联网 —— 协议层已按固件对齐，但 Vela 侧 @system.interconnect
+  //             收发原语（sendToBridge/onBridgeMessage）尚未确证、待真机填，故当前也不可真用。
+  // 默认值选 'direct' 的理由：direct 是「零额外依赖、拿到真机即可验」的最简路径；
+  //   一旦真机确认本机 fetch 不可用，或网桥硬件就绪，再切 'bridge'。业务代码无感。
   transport: 'direct',
+
+  // ====== 网桥通道参数（仅 transport==='bridge' 时生效） ======
+  bridge: {
+    // 固件整包下载 body 上限 BR_HTTP_MAX_BODY（默认约 128KB），超限固件回错误帧。
+    // 真机联调确认固件实际值后可改；此处用于给出清晰中文提示。
+    maxBodyBytes: 128 * 1024,
+    // 识别固件「超限错误帧」statusText 的关键字（待真机确认确切文案后补充）。
+    oversizeKeywords: ['too large', 'body', 'max_body', 'oversize', 'limit', '上限', '过大', '超过'],
+    // 给用户的超限提示文案
+    oversizeTip: '文件过大，超出网桥整包下载上限（约128KB），后续支持分段(Range)下载'
+  },
 
   // ====== 后端服务地址（双基址，可切换） ======
   // 默认基址：公开网页前端真实运行、最贴近用户实际访问的 API（公开实测）。

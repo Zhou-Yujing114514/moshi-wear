@@ -26,18 +26,30 @@ typedef struct {
     char  *buf;
     size_t len;
     size_t cap;
+    bool   overflow;   /* 已超 BR_HTTP_MAX_BODY，停止累积 */
 } acc_t;
 
-static void acc_push(acc_t *a, const char *data, size_t n)
+/* 返回 0 成功；-2 = body 超 BR_HTTP_MAX_BODY（调用方据此回错误帧，不 OOM） */
+static int acc_push(acc_t *a, const char *data, size_t n)
 {
+    if (a->overflow) return -2;
+    if (a->len + n > BR_HTTP_MAX_BODY) {
+        a->overflow = true;
+        ESP_LOGW(TAG_HTTP, "body exceeds BR_HTTP_MAX_BODY=%d, stop accumulation",
+                 (int)BR_HTTP_MAX_BODY);
+        return -2;
+    }
     if (a->len + n > a->cap) {
         size_t ncap = a->cap ? a->cap*2 : 1024;
         while (ncap < a->len + n) ncap *= 2;
+        if (ncap > BR_HTTP_MAX_BODY) ncap = BR_HTTP_MAX_BODY;
         a->buf = realloc(a->buf, ncap);
+        if (!a->buf) return -1;
         a->cap = ncap;
     }
     memcpy(a->buf + a->len, data, n);
     a->len += n;
+    return 0;
 }
 
 static esp_err_t event_cb(esp_http_client_event_t *evt)
@@ -45,8 +57,10 @@ static esp_err_t event_cb(esp_http_client_event_t *evt)
     acc_t *a = evt->user_data;
     switch (evt->event_id) {
     case HTTP_EVENT_ON_DATA:
-        if (!esp_http_client_is_chunked_response(evt->client))
-            acc_push(a, evt->data, evt->data_len);
+        /* ON_DATA 给的是按解码后的载荷（chunked 已由 IDF 剥掉分块帧），
+         * 应无条件累积；原实现仅在非 chunked 时累积，导致 chunked 响应 body 为空。 */
+        if (a && !a->overflow && evt->data && evt->data_len)
+            acc_push(a, (const char*)evt->data, evt->data_len);
         break;
     default: break;
     }
@@ -136,6 +150,19 @@ int http_bridge_fetch(const char *method, const char *url,
     if (!out->body) { out->body = malloc(1); out->body_len = 0; }
 
     esp_http_client_cleanup(cli);
+
+    /* body 超限：回可识别错误（qaic 层据此向手环回 fetch 错误帧，而非 OOM/空 body） */
+    if (acc.overflow) {
+        ESP_LOGW(TAG_HTTP, "%s body too large (>%d), return -2", url, (int)BR_HTTP_MAX_BODY);
+        free(out->body); out->body = NULL; out->body_len = 0;
+        free(out->headers_json); out->headers_json = NULL;
+        return -2;
+    }
+    /* content-length 已知且与实际累积量不一致（被截断/ chunked 无 CL）：记日志不判失败 */
+    if (cl > 0 && (size_t)cl != acc.len)
+        ESP_LOGW(TAG_HTTP, "content-length %lld != accumulated %u (chunked or truncated)",
+                 (long long)cl, (unsigned)acc.len);
+
     ESP_LOGI(TAG_HTTP, "%s -> %d, body=%u bytes", url, out->status, (unsigned)out->body_len);
     return 0;
 }

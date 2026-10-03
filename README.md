@@ -18,15 +18,15 @@
 │   ├── README.md                 ←   构建/安装/网桥通道/风险清单
 │   ├── package.json
 │   ├── dist/                     ←   ✅ 已真实打包（aiot-toolkit@2.0.5 构建，npmmirror 源）
-│   │   ├── cn.sswwgzs.moshi.novel.release.1.0.0.rpk  （22,752 B，openssl 自签证书签名）
-│   │   └── cn.sswwgzs.moshi.novel.debug.1.0.0.rpk    （30,038 B，工具链调试证书签名）
+│   │   ├── cn.sswwgzs.moshi.novel.release.1.0.0.rpk  （23,491 B，openssl 自签证书签名）
+│   │   └── cn.sswwgzs.moshi.novel.debug.1.0.0.rpk    （30,890 B，工具链调试证书签名）
 │   └── src/  (manifest.json, app.ux, common/{config,http,bridge,session,library,reader}.js,
 │              Login/ Shelf/ Search/ Reader/ —— Vela 工具链实际布局)
 ├── esp32-firmware/               ← 模块 B：ESP32 网桥固件（ESP-IDF v5.3, C，✅ 已真实编译）
 │   ├── README.md                 ←   构建/烧录/排错/许可/待核实清单
 │   ├── sdkconfig.defaults, partitions.csv, CMakeLists.txt
 │   ├── scripts/build.sh          ←   一键：装 IDF → set-target → build → merge_bin
-│   ├── dist/esp32-miwear-bridge-v1.0.0.bin   ←   ✅ 合并单 bin（1,194,240 B，offset 0x0 直烧）
+│   ├── dist/esp32-miwear-bridge-v1.0.0.bin   ←   ✅ 合并单 bin（1,194,816 B，offset 0x0 直烧）
 │   └── main/  (l1/l2_frame, mi_crypto, mi_handshake, sar, qaic, codec,
 │               ble_client, proto_pack, http_bridge, bridge, main, config)
 └── shared/                       ← 共享研究产出
@@ -78,10 +78,24 @@
 | 手环 9 Pro `@system.fetch`（direct 模式真机实测） | ⚠️ 官方标注不支持；bridge 通道已实现待联调 |
 | `@system.interconnect` 真实 API 名/调用形式（bridge 收发原语） | ⚠️ 待真机确证后填入 bridge.js 顶部 |
 | ESP32 固件真实编译（IDF v5.3） | ✅ 0 error / 0 主组件 warning |
-| ESP32 合并 bin 产出与校验（magic/SHA256/尺寸） | ✅ 通过（1,194,240 B，SHA256 f0931999…，≪4 MB） |
+| ESP32 合并 bin 产出与校验（magic/SHA256/尺寸） | ✅ 通过（1,194,816 B，SHA256 92084e07…，≪4 MB） |
 | ESP32 真机烧录/握手/WiFi+BLE 共存 | ⚠️ 需用户侧（串口看 BLE_CONN/HS_STEP/FETCH_REQ 日志） |
 | protobuf 字段编号 / CTR IV 怪癖 / QAIC 内层封装 | ⚠️ 待真机抓包核对（固件可配置占位） |
 | authkey 提取流程 | ⚠️ 需官方 App 配对后提取，写入 main/config.h |
+
+## 第三方静态审查修复记录（已重编译重产出）
+
+| 问题 | 修复 |
+|---|---|
+| 🔴 栈溢出：bridge.c 三处 `[BR_MPS]`(64KB) 栈数组嵌套峰值约 192KB | 全部堆化（按实际长度 malloc/free，错误路径全释放）；qaic.c 4KB 流缓冲同步堆化；主栈 8192→16384 作次要余量 |
+| 🔴 HTTP body 无上限：acc_push 无限 realloc | `BR_HTTP_MAX_BODY` 64KB→128KB（与可用堆匹配）硬上限，超限回可识别错误帧 `response body too large for buffer`，不 OOM |
+| 🔴 chunked 响应 body 为空 | ON_DATA 无条件累积（IDF 已剥分块帧）；content-length 与累积量不一致仅记日志 |
+| 🟠 协商 deflate 但未真压缩 | 本地 caps `compressions` 仅 `["none"]`，标签与数据一致 |
+| 🟠 on_fetch_ack 注释声称 go-back-N | 注释与实现对齐：「丢片仅靠 30s 超时兜底」 |
+| 🟡 CI：esptool 下划线参数 / aiot-toolkit 全局安装失败 | 改连字符 `--flash-mode/--flash-size/--flash-freq`；改项目内 `npm install` + `npx aiot` |
+| 🟠 bridge.js 空壳（interconnect 未确证） | 保持收敛待真机；transport 默认 'direct' 且 README 如实标注双路径限制；网桥 128KB 上限错误映射为清晰用户提示 |
+
+修复后：ESP32 重编译 **0 error / 0 主组件 warning**，新 bin SHA256 `92084e070dd983b1757826f6bacd314169be6b218b65b43c7c0e929e6a572af1`；QuickApp 重新打包并重跑校验（JSON 2/2、JS 6/6 全过）。
 
 ## GitHub 组织建议（供 MainAgent 推送时参考）
 

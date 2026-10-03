@@ -138,6 +138,7 @@ uint32_t crc32_ieee(const uint8_t *data, size_t len)
 }
 
 /* ================= raw deflate (RFC1951) =================
+ * 【未启用】本地 caps 协商仅 "none"（见 qaic.c），不会收到 deflate 数据。
  * ESP-IDF v5.3 未内置 zlib 组件，无法直接 link inflate。
  * 协议角色上：压缩方向是 ESP32 下行给手环、由手环解压；
  * 上行请求为明文 JSON，ESP32 实际无需解压手环发来的 deflate。
@@ -151,6 +152,7 @@ int deflate_decompress(const uint8_t *in, size_t in_len,
 }
 
 /* ================= LZ4 裸 block 解压 =================
+ * 【未启用】本地 caps 协商仅 "none"，不会收到 lz4 数据。解码器保留备查。
  * 极简 LZ4 block 解码器（与 lz4_flex 默认块格式兼容）。
  * 格式：token byte = (literal_len << 4) | match_len；
  *  若 literal_len==15，后续字节累加直到 !=255；然后字面量；
