@@ -1,0 +1,67 @@
+name: 云编译 · ESP32 固件 + 摩柿 QuickApp
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ---------- ESP32 网桥固件：用官方 IDF 容器编译，合成单 bin ----------
+  esp32-firmware:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.3
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 编译固件
+        working-directory: esp32-firmware
+        run: |
+          idf.py set-target esp32
+          idf.py build
+
+      - name: 合成单 bin（offset 0x0）
+        working-directory: esp32-firmware
+        run: |
+          mkdir -p dist
+          esptool.py --chip esp32 merge_bin \
+            -o dist/esp32-miwear-bridge-v1.0.0.bin \
+            --flash_mode dio --flash_size 4MB --flash_freq 40m \
+            0x1000 build/bootloader/bootloader.bin \
+            0x8000 build/partition_table/partition-table.bin \
+            0x10000 build/miwear_esp_bridge.bin
+
+      - name: 上传固件产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-miwear-bridge-bin
+          path: esp32-firmware/dist/esp32-miwear-bridge-v1.0.0.bin
+          if-no-files-found: error
+
+  # ---------- 摩柿 QuickApp：用 aiot-toolkit 打包 ----------
+  quickapp:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: 安装打包工具链
+        run: npm install -g aiot-toolkit@2.0.5
+
+      - name: 打包 rpk
+        working-directory: quickapp-moshi-novel
+        run: |
+          aiot build
+          aiot release || true
+
+      - name: 上传 rpk 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: moshi-novel-quickapp-rpk
+          path: quickapp-moshi-novel/dist/*.rpk
+          if-no-files-found: warn
