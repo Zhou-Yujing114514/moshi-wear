@@ -9,6 +9,7 @@
 #include "codec.h"
 #include "log_tags.h"
 #include "config.h"
+#include "proto_const.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "cJSON.h"
@@ -16,14 +17,14 @@
 #include <stdlib.h>
 
 /* ================= 常量（笔记 §10） ================= */
-static const char *TAG_HS   = "__hs__";
-static const char *TAG_FETCH = "fetch";
-static const char *TAG_CHUNK = "fetch-chunk";
-static const char *TAG_ACK   = "fetch-ack";
-static const char *TAG_STREAM = "fetch-stream";
-static const char *TAG_STREAM_ACK = "fetch-stream-ack";
-static const char *TAG_STREAM_CANCEL = "fetch-stream-cancel";
-static const char *TAG_STREAM_ERROR   = "fetch-stream-error";
+static const char *FTAG_HS   = "__hs__";
+static const char *FTAG_FETCH = "fetch";
+static const char *FTAG_CHUNK = "fetch-chunk";
+static const char *FTAG_ACK   = "fetch-ack";
+static const char *FTAG_STREAM = "fetch-stream";
+static const char *FTAG_STREAM_ACK = "fetch-stream-ack";
+static const char *FTAG_STREAM_CANCEL = "fetch-stream-cancel";
+static const char *FTAG_STREAM_ERROR   = "fetch-stream-error";
 
 #define LOCAL_PROTOCOL_VERSION   4        /* §10 协议版本 */
 #define DEFAULT_CHUNK_SIZE       4096      /* §10 默认 chunkSize */
@@ -200,7 +201,7 @@ static int send_json(cJSON *obj)
 static void send_error(const char *id, const char *msg)
 {
     cJSON *o = cJSON_CreateObject();
-    cJSON_AddStringToObject(o, "tag", TAG_FETCH);
+    cJSON_AddStringToObject(o, "tag", FTAG_FETCH);
     if (id) cJSON_AddStringToObject(o, "id", id);
     cJSON *r = cJSON_CreateObject();
     cJSON_AddBoolToObject(r, "ok", false);
@@ -236,7 +237,7 @@ static void on_handshake(const cJSON *j)
     if (count < 2) {
         /* 回 count+1，附本端 caps（§3.3） */
         cJSON *o = cJSON_CreateObject();
-        cJSON_AddStringToObject(o, "tag", TAG_HS);
+        cJSON_AddStringToObject(o, "tag", FTAG_HS);
         cJSON_AddNumberToObject(o, "count", count + 1);
         cJSON *c = cJSON_CreateObject();
         cJSON_AddNumberToObject(c, "version", LOCAL_PROTOCOL_VERSION);
@@ -288,7 +289,7 @@ static void pick_plan(const nego_t *n, const uint8_t *body, size_t len,
 }
 
 /* 把 bytes 按 plan 编码成字符串 */
-static char *encode_bytes(const uint8_t *body, size_t len, const plan_t *p)
+static char *encode_bytes(const uint8_t *body, size_t len, plan_t *p)
 {
     /* 先压缩（占位，实际压缩见 do_compress 说明） */
     int clen = 0;
@@ -333,7 +334,7 @@ static void send_v1_response(session_t *s, const char *id,
     }
 
     cJSON *o = cJSON_CreateObject();
-    cJSON_AddStringToObject(o, "tag", TAG_FETCH);
+    cJSON_AddStringToObject(o, "tag", FTAG_FETCH);
     if (id) cJSON_AddStringToObject(o, "id", id);
     cJSON *resp = cJSON_CreateObject();
     cJSON_AddBoolToObject(resp, "ok", r->status >= 200 && r->status < 300);
@@ -394,7 +395,7 @@ static void send_chunk(transfer_t *t, int seq)
     base64_encode(t->data + off, len, enc, ((len+2)/3)*4 + 1);
 
     cJSON *o = cJSON_CreateObject();
-    cJSON_AddStringToObject(o, "tag", TAG_CHUNK);
+    cJSON_AddStringToObject(o, "tag", FTAG_CHUNK);
     cJSON_AddStringToObject(o, "id", t->id);
     cJSON_AddNumberToObject(o, "seq", seq);
     cJSON_AddNumberToObject(o, "total", t->chunk_count);
@@ -425,7 +426,7 @@ static void start_chunked(session_t *s, const char *id,
 
     /* 头部帧（§5.2） */
     cJSON *o = cJSON_CreateObject();
-    cJSON_AddStringToObject(o, "tag", TAG_FETCH);
+    cJSON_AddStringToObject(o, "tag", FTAG_FETCH);
     cJSON_AddStringToObject(o, "id", id);
     cJSON *resp = cJSON_CreateObject();
     cJSON_AddBoolToObject(resp, "ok", status >= 200 && status < 300);
@@ -522,7 +523,7 @@ static void send_stream_frame(qstream_t *st, uint64_t offset,
                               const uint8_t *data, int len, bool final)
 {
     cJSON *o = cJSON_CreateObject();
-    cJSON_AddStringToObject(o, "tag", TAG_STREAM);
+    cJSON_AddStringToObject(o, "tag", FTAG_STREAM);
     cJSON_AddStringToObject(o, "id", st->id);
     cJSON_AddNumberToObject(o, "seq", (double)(offset / DEFAULT_CHUNK_SIZE)); /* 顺序号 */
     cJSON_AddNumberToObject(o, "offset", (double)offset);
@@ -531,7 +532,7 @@ static void send_stream_frame(qstream_t *st, uint64_t offset,
         base64_encode(data, len, enc, ((len+2)/3)*4+1);
         cJSON_AddStringToObject(o, "data", enc);
         uint32_t crc = crc32_ieee(data, len);
-        char crcs[9]; snprintf(crcs, sizeof(crcs), "%08x", crc);
+        char crcs[9]; snprintf(crcs, sizeof(crcs), "%08x", (unsigned int)crc);
         cJSON_AddStringToObject(o, "crc32", crcs);
         free(enc);
     } else {
@@ -554,7 +555,7 @@ static void pump_stream(qstream_t *st, int window_chunks, int chunk_size)
         if (n < 0) {
             /* 错误帧（§6.4） */
             cJSON *o = cJSON_CreateObject();
-            cJSON_AddStringToObject(o, "tag", TAG_STREAM_ERROR);
+            cJSON_AddStringToObject(o, "tag", FTAG_STREAM_ERROR);
             cJSON_AddStringToObject(o, "id", st->id);
             cJSON_AddStringToObject(o, "message", "read streaming body failed");
             send_json(o);
@@ -595,7 +596,7 @@ static void start_stream(session_t *s, const char *id,
     /* 流头部（§6.1）：compression 固定 none（§8） */
     int chunk_size = s->nego.chunkSize ? s->nego.chunkSize : DEFAULT_CHUNK_SIZE;
     cJSON *o = cJSON_CreateObject();
-    cJSON_AddStringToObject(o, "tag", TAG_FETCH);
+    cJSON_AddStringToObject(o, "tag", FTAG_FETCH);
     cJSON_AddStringToObject(o, "id", id);
     cJSON *r = cJSON_CreateObject();
     cJSON_AddBoolToObject(r, "ok", true);
@@ -641,7 +642,7 @@ static void on_stream_cancel(const cJSON *j)
     if (!cJSON_IsString(id)) return;
     qstream_t *st = find_stream(id->valuestring);
     if (st) {
-        ESP_LOGI(TAG_STREAM, "stream %s cancelled", st->id);
+        ESP_LOGI(FTAG_STREAM, "stream %s cancelled", st->id);
         http_bridge_stream_close(st->stream);
         st->active = false;
     }
@@ -742,11 +743,11 @@ void qaic_on_json(const char *json_text)
     const cJSON *tag = cJSON_GetObjectItem(j, "tag");
     if (!cJSON_IsString(tag)) { cJSON_Delete(j); return; }
 
-    if (strcmp(tag->valuestring, TAG_HS) == 0)              on_handshake(j);
-    else if (strcmp(tag->valuestring, TAG_FETCH) == 0)      on_fetch(j);
-    else if (strcmp(tag->valuestring, TAG_ACK) == 0)        on_fetch_ack(j);
-    else if (strcmp(tag->valuestring, TAG_STREAM_ACK) == 0) on_stream_ack(j);
-    else if (strcmp(tag->valuestring, TAG_STREAM_CANCEL) == 0) on_stream_cancel(j);
+    if (strcmp(tag->valuestring, FTAG_HS) == 0)              on_handshake(j);
+    else if (strcmp(tag->valuestring, FTAG_FETCH) == 0)      on_fetch(j);
+    else if (strcmp(tag->valuestring, FTAG_ACK) == 0)        on_fetch_ack(j);
+    else if (strcmp(tag->valuestring, FTAG_STREAM_ACK) == 0) on_stream_ack(j);
+    else if (strcmp(tag->valuestring, FTAG_STREAM_CANCEL) == 0) on_stream_cancel(j);
     else ESP_LOGD(TAG_FETCH_REQ, "ignored tag %s", tag->valuestring);
 
     cJSON_Delete(j);
@@ -789,7 +790,7 @@ void qaic_tick(uint32_t now)
     for (int i = 0; i < MAX_CONCURRENT_STREAMS; i++) {
         qstream_t *st = &s_streams[i];
         if (st->active && now - st->last_ack_ms > TRANSFER_TIMEOUT_MS) {
-            ESP_LOGW(TAG_STREAM, "stream %s timeout, close", st->id);
+            ESP_LOGW(FTAG_STREAM, "stream %s timeout, close", st->id);
             http_bridge_stream_close(st->stream); st->active = false;
         }
     }

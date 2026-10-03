@@ -116,8 +116,8 @@ int http_bridge_fetch(const char *method, const char *url,
     strncpy(out->status_text, out->status==200?"OK":"HTTP", sizeof(out->status_text)-1);
 
     /* content-type */
-    char ct[64] = {0};
-    if (esp_http_client_get_header(cli, "content-type", ct) == ESP_OK)
+    char *ct = NULL;
+    if (esp_http_client_get_header(cli, "content-type", &ct) == ESP_OK && ct)
         strncpy(out->content_type, ct, sizeof(out->content_type)-1);
 
     /* content-length（可能 -1） */

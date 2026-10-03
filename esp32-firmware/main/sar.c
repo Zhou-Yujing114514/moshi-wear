@@ -18,6 +18,10 @@ static uint32_t now_ms(void)
     return (uint32_t)(esp_timer_get_time() / 1000);
 }
 
+/* 待确认槽位数（≥ TX_WIN 32），seq 对其取模索引 */
+#define SLOTN   48
+#define SLOT(seq) ((seq) % SLOTN)
+
 void sar_init(sar_t *s, sar_ble_write_fn bw, void *bw_ctx,
               sar_up_fn up, void *up_ctx, uint16_t max_write_len)
 {
@@ -50,11 +54,12 @@ static int tx_frame(sar_t *s, const uint8_t *l2_payload, size_t l2_len)
 
         /* 登记待确认 */
         uint8_t seq = s->tx_seq;
-        memcpy(s->pending_buf[seq], frame, flen);
-        s->pending_len[seq] = (uint16_t)flen;
-        s->pending_retries[seq] = 0;
-        s->pending_sent_ms[seq] = now_ms();
-        s->pending_active[seq] = true;
+        uint8_t slot = SLOT(seq);
+        memcpy(s->pending_buf[slot], frame, flen);
+        s->pending_len[slot] = (uint16_t)flen;
+        s->pending_retries[slot] = 0;
+        s->pending_sent_ms[slot] = now_ms();
+        s->pending_active[slot] = true;
 
         ESP_LOGD(TAG_FLOW_ACK, "TX data seq=%u chunk=%u", seq, (unsigned)chunk);
         if (s->ble_write(frame, flen, s->ble_ctx) != 0) rc = -1;
@@ -90,21 +95,22 @@ static void send_ack(sar_t *s, uint8_t seq, bool nak)
 /* 处理收到的 Ack/Nak */
 static void on_ack_frame(sar_t *s, uint8_t seq, bool nak)
 {
+    uint8_t slot = SLOT(seq);
     if (nak) {
         /* 重传该帧一次（受最大重试限制） */
-        if (s->pending_active[seq] && s->pending_retries[seq] < SAR_MAX_RETRIES) {
-            s->pending_retries[seq]++;
-            s->pending_sent_ms[seq] = now_ms();
+        if (s->pending_active[slot] && s->pending_retries[slot] < SAR_MAX_RETRIES) {
+            s->pending_retries[slot]++;
+            s->pending_sent_ms[slot] = now_ms();
             if (s->ble_write)
-                s->ble_write(s->pending_buf[seq], s->pending_len[seq], s->ble_ctx);
+                s->ble_write(s->pending_buf[slot], s->pending_len[slot], s->ble_ctx);
             ESP_LOGI(TAG_FLOW_ACK, "Nak seq=%u -> retransmit #%d",
-                     seq, s->pending_retries[seq]);
+                     seq, s->pending_retries[slot]);
         }
         return;
     }
     /* Ack：该 seq 已确认，释放 */
-    if (s->pending_active[seq]) {
-        s->pending_active[seq] = false;
+    if (s->pending_active[slot]) {
+        s->pending_active[slot] = false;
         ESP_LOGD(TAG_FLOW_ACK, "Ack seq=%u released", seq);
     }
 }
@@ -158,20 +164,20 @@ void sar_tick(sar_t *s, uint32_t now_ms_arg)
 {
     (void)now_ms_arg;
     uint32_t t = now_ms();
-    for (int seq = 0; seq < 256; seq++) {
-        if (!s->pending_active[seq]) continue;
-        if (t - s->pending_sent_ms[seq] >= SAR_SEND_TIMEOUT_MS) {
-            if (s->pending_retries[seq] < SAR_MAX_RETRIES) {
-                s->pending_retries[seq]++;
-                s->pending_sent_ms[seq] = t;
+    for (int slot = 0; slot < SLOTN; slot++) {
+        if (!s->pending_active[slot]) continue;
+        if (t - s->pending_sent_ms[slot] >= SAR_SEND_TIMEOUT_MS) {
+            if (s->pending_retries[slot] < SAR_MAX_RETRIES) {
+                s->pending_retries[slot]++;
+                s->pending_sent_ms[slot] = t;
                 if (s->ble_write)
-                    s->ble_write(s->pending_buf[seq], s->pending_len[seq], s->ble_ctx);
-                ESP_LOGI(TAG_FLOW_ACK, "timeout seq=%u -> retransmit #%d",
-                         seq, s->pending_retries[seq]);
+                    s->ble_write(s->pending_buf[slot], s->pending_len[slot], s->ble_ctx);
+                ESP_LOGI(TAG_FLOW_ACK, "timeout slot=%d -> retransmit #%d",
+                         slot, s->pending_retries[slot]);
             } else {
-                ESP_LOGW(TAG_FLOW_ACK, "seq=%u gave up after %d retries",
-                         seq, SAR_MAX_RETRIES);
-                s->pending_active[seq] = false;
+                ESP_LOGW(TAG_FLOW_ACK, "slot=%d gave up after %d retries",
+                         slot, SAR_MAX_RETRIES);
+                s->pending_active[slot] = false;
             }
         }
     }

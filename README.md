@@ -15,12 +15,18 @@
 /home/user/Doubao/chats/38445255839356162/
 ├── README.md                     ← 本文件（总览）
 ├── quickapp-moshi-novel/         ← 模块 A：摩柿小说手环快应用（Vela JS）
-│   ├── README.md                 ←   构建/安装/接口假设/风险清单
+│   ├── README.md                 ←   构建/安装/网桥通道/风险清单
 │   ├── package.json
-│   └── src/  (manifest.json, app.ux, common/, pages/{login,shelf,search,reader})
-├── esp32-firmware/               ← 模块 B：ESP32 网桥固件（ESP-IDF, C）
+│   ├── dist/                     ←   ✅ 已真实打包（aiot-toolkit@2.0.5 构建，npmmirror 源）
+│   │   ├── cn.sswwgzs.moshi.novel.release.1.0.0.rpk  （22,752 B，openssl 自签证书签名）
+│   │   └── cn.sswwgzs.moshi.novel.debug.1.0.0.rpk    （30,038 B，工具链调试证书签名）
+│   └── src/  (manifest.json, app.ux, common/{config,http,bridge,session,library,reader}.js,
+│              Login/ Shelf/ Search/ Reader/ —— Vela 工具链实际布局)
+├── esp32-firmware/               ← 模块 B：ESP32 网桥固件（ESP-IDF v5.3, C，✅ 已真实编译）
 │   ├── README.md                 ←   构建/烧录/排错/许可/待核实清单
 │   ├── sdkconfig.defaults, partitions.csv, CMakeLists.txt
+│   ├── scripts/build.sh          ←   一键：装 IDF → set-target → build → merge_bin
+│   ├── dist/esp32-miwear-bridge-v1.0.0.bin   ←   ✅ 合并单 bin（1,194,240 B，offset 0x0 直烧）
 │   └── main/  (l1/l2_frame, mi_crypto, mi_handshake, sar, qaic, codec,
 │               ble_client, proto_pack, http_bridge, bridge, main, config)
 └── shared/                       ← 共享研究产出
@@ -47,28 +53,35 @@
 - 服务器两轮只读侦察（用户自有服务器，单会话+重试纪律，全程只读）：主站后端是 **Go**（容器 tomato-site-app-1）+ nginx 网关容器 + CF 隧道（域名 **morax.kdns.fr / dl.1979.kdns.fr**）；服务器 nginx/代码中**无 sswwgzs.cn 配置**（公共域名与隧道域名的对应关系待用户确认）；提交任务实为 `POST /api/tasks`；下载直链形态 `/dl/{path}`（另有 `GET /api/tasks/{id}/text` 站内正文）；token 为内存随机串会话（无 JWT、无过期、重启失效，Bearer 或 HttpOnly cookie）；数据为纯 JSON 文件；限流约 5 分钟 15 本、下载链接 TTL 约 24h。
 - QuickApp `config.js` 已按「默认网页实测 + 服务器实测备选」双配置实现，真机联调一处切换。
 
-### 设备侧风险（README 已标注）
-- 官方「支持明细」标注小米手环 9/9 Pro **不支持 `@system.fetch` / `@system.request`**；QuickApp 网络层已隔离在 `http.js`，真机若不可用可整体替换为手机中转或经 ESP32 网桥通道。
+### 设备侧风险与对策（README 已标注）
+- 官方「支持明细」标注小米手环 9/9 Pro **不支持 `@system.fetch` / `@system.request`**；QuickApp 已新增 **bridge 传输通道**（`src/common/bridge.js`，与固件 qaic.c 的 FetchBridge 信封逐字段对齐：`__hs__` 握手、`tag:"fetch"` 请求、`fetch-chunk`+`fetch-ack` 分片流控、text/base64 解码）绕开该限制；`config.js` 的 `transport: 'direct' | 'bridge'` 开关切换，direct（@system.fetch）保留为备选。Vela 侧 `@system.interconnect` 收发原语收敛在 bridge.js 顶部待真机确证填写。
 
 ---
 
-## 构建与烧录（详见各模块 README）
+## 构建与烧录（已真实执行，详见各模块 README）
 
-- **QuickApp**：用小米 AIoT-IDE 导入 `quickapp-moshi-novel/` → 构建生成 `.rpk` → 推送安装到手环 9 Pro。沙盒内已通过全部 JSON/JS 静态校验。
-- **ESP32 固件**：`idf.py set-target esp32 && idf.py build`；烧录 `esptool.py merge_bin` 合并单 bin、offset 0x0、波特率 921600。沙盒无 ESP-IDF 未编译；纯逻辑模块已用 gcc 单元验证（CRC32/base64/hex/L1 帧往返）。
+- **QuickApp（✅ 已打包）**：沙盒内用真实工具链 `aiot-toolkit@2.0.5`（npm npmmirror 源）执行 `aiot build` / `aiot release`，产出两个**已签名** `.rpk`（release=openssl 自签证书、debug=工具链调试证书），zip 结构验证通过（manifest.json / app.js / 四页面编译产物 / META-INF/CERT）。命令行：`npx aiot build` / `npx aiot release`。
+- **ESP32 固件（✅ 已编译）**：沙盒内真实安装 ESP-IDF v5.3（xtensa-esp-elf gcc 13.2.0）并 `idf.py build`，最终 **0 error、0 主组件 warning**；`esptool.py merge_bin` 产出合并单 bin（DIO、40MHz、4MB，offset 0x0 直烧）。一键复现：`bash esp32-firmware/scripts/build.sh`。烧录命令：
+  ```bash
+  python3 -m esptool --chip esp32 -p /dev/ttyUSB0 -b 921600 \
+    --before default_reset --after hard_reset \
+    write_flash 0x0 esp32-firmware/dist/esp32-miwear-bridge-v1.0.0.bin
+  ```
 
 ## 真机验证清单（汇总）
 
 | 环节 | 状态 |
 |---|---|
-| QuickApp JSON/JS 静态校验 | ✅ 通过 |
-| QuickApp 真机运行/联网/存储/翻页/`.rpk` 打包签名 | ⚠️ 未验证（无真机与 AIoT-IDE） |
-| 手环 9 Pro 对 `@system.fetch` 支持 | ⚠️ 官方标注不支持，待真机确认 |
-| 后端真实 token/接口联调 | ⚠️ 域名对应关系待用户确认后联调 |
-| ESP32 纯逻辑模块单元验证 | ✅ 通过 |
-| ESP32 IDF 编译/烧录/真机握手 | ⚠️ 未验证 |
-| protobuf 字段编号 / CTR IV 怪癖 / QAIC 内层封装 | ⚠️ 待抓包核对（可配置占位） |
-| authkey 提取流程 | ⚠️ 需官方 App 配对后提取 |
+| QuickApp 打包 `.rpk`（debug+release，已签名） | ✅ 沙盒真实构建通过 |
+| QuickApp JSON/JS 静态校验 + `.ux` webpack 编译 | ✅ 通过（JS 6/6，JSON 2/2） |
+| QuickApp 真机安装/启动/联网/存储/翻页 | ⚠️ 需用户侧（AIoT-IDE 或 adb 推送） |
+| 手环 9 Pro `@system.fetch`（direct 模式真机实测） | ⚠️ 官方标注不支持；bridge 通道已实现待联调 |
+| `@system.interconnect` 真实 API 名/调用形式（bridge 收发原语） | ⚠️ 待真机确证后填入 bridge.js 顶部 |
+| ESP32 固件真实编译（IDF v5.3） | ✅ 0 error / 0 主组件 warning |
+| ESP32 合并 bin 产出与校验（magic/SHA256/尺寸） | ✅ 通过（1,194,240 B，SHA256 f0931999…，≪4 MB） |
+| ESP32 真机烧录/握手/WiFi+BLE 共存 | ⚠️ 需用户侧（串口看 BLE_CONN/HS_STEP/FETCH_REQ 日志） |
+| protobuf 字段编号 / CTR IV 怪癖 / QAIC 内层封装 | ⚠️ 待真机抓包核对（固件可配置占位） |
+| authkey 提取流程 | ⚠️ 需官方 App 配对后提取，写入 main/config.h |
 
 ## GitHub 组织建议（供 MainAgent 推送时参考）
 

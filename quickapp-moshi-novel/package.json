@@ -6,10 +6,12 @@
   "type": "module",
   "main": "src/app.ux",
   "scripts": {
-    "check:json": "echo placeholder",
-    "check:js": "echo placeholder"
+    "build": "aiot build",
+    "release": "aiot release",
+    "check:json": "python3 -m json.tool package.json && python3 -m json.tool src/manifest.json",
+    "check:js": "for f in src/common/*.js; do node --check \"$f\" || exit 1; done"
   },
   "devDependencies": {
-    "@aiot-toolkit": "0.11.1"
+    "aiot-toolkit": "^2.0.5"
   }
 }

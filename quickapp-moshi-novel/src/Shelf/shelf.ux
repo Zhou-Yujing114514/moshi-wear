@@ -94,11 +94,11 @@
 import router from '@system.router'
 import prompt from '@system.prompt'
 import file from '@system.file'
-import config from '../../common/config.js'
-import { request, getText, pickByPath } from '../../common/http.js'
-import { restoreSession, isLoggedIn } from '../../common/session.js'
-import { loadLocalBooks, upsertBook, removeBook, bookFileUri } from '../../common/library.js'
-import { formatSize } from '../../common/reader.js'
+import config from '../common/config.js'
+import { request, getText, pickByPath } from '../common/http.js'
+import { restoreSession, isLoggedIn } from '../common/session.js'
+import { loadLocalBooks, upsertBook, removeBook, bookFileUri } from '../common/library.js'
+import { formatSize } from '../common/reader.js'
 
 // 任务状态 → 中文（已确认状态机：queued/running/done/failed/canceled）
 const STATE_LABEL = {

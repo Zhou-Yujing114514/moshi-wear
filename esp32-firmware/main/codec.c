@@ -138,24 +138,16 @@ uint32_t crc32_ieee(const uint8_t *data, size_t len)
 }
 
 /* ================= raw deflate (RFC1951) =================
- * 用 zlib inflate，windowBits = -15 = 无 zlib 头的裸 deflate。 */
-#include "zlib.h"
+ * ESP-IDF v5.3 未内置 zlib 组件，无法直接 link inflate。
+ * 协议角色上：压缩方向是 ESP32 下行给手环、由手环解压；
+ * 上行请求为明文 JSON，ESP32 实际无需解压手环发来的 deflate。
+ * 因此此处保留接口但返回不支持；真机若需上行解压，可接入 IDF zlib 组件
+ * （windowBits=-15）后恢复实现。 */
 int deflate_decompress(const uint8_t *in, size_t in_len,
                       uint8_t *out, size_t out_cap)
 {
-    z_stream strm;
-    memset(&strm, 0, sizeof(strm));
-    /* -15：raw deflate，无 zlib/gzip 头 */
-    if (inflateInit2(&strm, -15) != Z_OK) return -1;
-    strm.next_in = (Bytef *)in;
-    strm.avail_in = (uInt)in_len;
-    strm.next_out = out;
-    strm.avail_out = (uInt)out_cap;
-    int rc = inflate(&strm, Z_FINISH);
-    int produced = (int)strm.total_out;
-    inflateEnd(&strm);
-    if (rc != Z_STREAM_END && rc != Z_OK) return -1;
-    return produced;
+    (void)in; (void)in_len; (void)out; (void)out_cap;
+    return -1; /* zlib 未链接；见上方说明 */
 }
 
 /* ================= LZ4 裸 block 解压 =================

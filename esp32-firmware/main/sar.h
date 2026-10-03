@@ -37,15 +37,17 @@ typedef struct {
 
     /* TX 状态 */
     uint8_t tx_seq;
-    /* 待确认帧表（按 seq(u8) 直接索引，256 槽覆盖回绕；每槽一帧 ≤ max_write_len） */
-    uint8_t  pending_buf[256][300];
-    uint16_t pending_len[256];
-    uint8_t  pending_retries[256];
-    uint32_t pending_sent_ms[256];
-    bool     pending_active[256];
+    /* 待确认帧表：窗口 32，取 48 槽（window+余量），按 seq 取模索引。
+     * （原 256 槽在 ESP32 ~140KB BSS 导致 DRAM 溢出，按真实窗口缩减。） */
+    uint8_t  pending_buf[48][300];
+    uint16_t pending_len[48];
+    uint8_t  pending_retries[48];
+    uint32_t pending_sent_ms[48];
+    bool     pending_active[48];
 
-    /* RX 重组缓冲 */
-    uint8_t rx_buf[SAR_MPS];
+    /* RX 重组缓冲：实际 BLE 分片远小于 MPS；MPS=64512 为逻辑上限常量保留，
+     * 静态缓冲按典型片大小配置，真机可按内存余量调大。 */
+    uint8_t rx_buf[4096];
     size_t  rx_len;
 } sar_t;
 

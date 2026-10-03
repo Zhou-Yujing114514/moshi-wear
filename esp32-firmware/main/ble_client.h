@@ -24,8 +24,8 @@ void ble_bridge_init(ble_rx_fn rx, void *rx_ctx,
                      ble_event_fn ev, void *ev_ctx,
                      const uint8_t target_addr[6]);
 
-/* 写无响应（下行）。供 sar 调用。 */
-int ble_bridge_write(const uint8_t *data, size_t len);
+/* 写无响应（下行）。供 sar 调用；ctx 未用（与 sar_ble_write_fn 签名对齐）。 */
+int ble_bridge_write(const uint8_t *data, size_t len, void *ctx);
 
 /* 当前协商到的 max_write_len（MTU-3） */
 uint16_t ble_bridge_max_write_len(void);

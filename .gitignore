@@ -5,3 +5,8 @@ shared/ssh-recon-transcript*.log
 # 临时/本地文件
 .tmp-*
 *.bak
+
+# 构建中间产物与依赖（不推入仓库）
+esp32-firmware/build/
+quickapp-moshi-novel/build/
+quickapp-moshi-novel/node_modules/

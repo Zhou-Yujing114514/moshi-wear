@@ -10,24 +10,29 @@
 ```
 quickapp-moshi-novel/
 ├── README.md                     # 本文件
-├── package.json                  # npm 配置（依赖 @aiot-toolkit）
-├── sign/                         # 签名目录（生产打包用，见下文「签名」）
+├── package.json                  # npm 配置（依赖 aiot-toolkit；scripts: build/release）
+├── sign/                         # 签名目录：private.pem / certificate.pem（release 用）
+├── dist/                         # 构建产物：.rpk（已构建好 debug / release 两个签名包）
 └── src/                          # 源码根目录（固定名，不可改）
     ├── manifest.json             # 应用配置：包名/图标/版本/features 声明/路由
     ├── app.ux                     # 应用入口：应用级生命周期 + 会话恢复
     ├── common/
-    │   ├── config.js              # ★唯一接口配置入口：所有地址/字段/阈值集中于此
+    │   ├── config.js              # ★唯一接口配置入口：所有地址/字段/阈值/transport 开关
     │   ├── session.js             # 登录令牌：内存态 + @system.storage 持久化
-    │   ├── http.js                # @system.fetch 封装：统一鉴权头、JSON/文本请求
+    │   ├── http.js                # 网络层：direct(@system.fetch) / bridge 双通道分流
+    │   ├── bridge.js             # ★ESP32 网桥适配层：FetchBridge 信封（绕开机身 fetch 限制）
     │   ├── library.js             # 本地书库：已下载书籍元信息 CRUD + 文件删除
     │   ├── reader.js              # 阅读器分页纯函数：切页/总页/页码钳制/大小格式化
     │   └── images/icon.png        # 占位图标（192x192，真机请替换）
-    └── pages/
-        ├── login/login.ux         # 登录页：用户名+密码 → POST /api/login
-        ├── shelf/shelf.ux         # 书架页（首页）：下载任务列表 + 本地缓存合并
-        ├── search/search.ux       # 搜书页：GET /api/search → POST /api/download
-        └── reader/reader.ux       # 阅读页：本地 TXT 分页、上/下翻页、进度记忆
+    ├── Login/login.ux             # 登录页：用户名+密码 → POST /api/login
+    ├── Shelf/shelf.ux             # 书架页（首页）：下载任务列表 + 本地缓存合并
+    ├── Search/search.ux           # 搜书页：GET /api/search → POST /api/download
+    └── Reader/reader.ux           # 阅读页：本地 TXT 分页、上/下翻页、进度记忆
 ```
+
+> 布局实测修正：本工程用 `aiot-toolkit@2.0.5` 真实打包验证——Vela 工具链按
+> **`src/<页面Key>/<component>.ux`** 定位页面（页面 Key 与 `manifest.json` 的 `router.pages` 键同名，
+> 如 `Login`），**不是** `src/pages/` 层级。页面间 `common/` 相对导入为 `../common/...`。
 
 目录布局依据官方文档「项目结构 / 项目概览」：源码统一在 `src/`，每个页面一个子目录、对应一个 `.ux`；
 `common/` 放跨页共享脚本；构建产物 `build/`、`dist/`（`.rpk`）由工具自动生成，无需手写。
@@ -38,36 +43,37 @@ quickapp-moshi-novel/
 
 | 功能 | 页面 | 关键 API | 说明 |
 |---|---|---|---|
-| 1. 摩柿登录 | `pages/login/login.ux` | `@system.fetch` + `@system.storage` | 用户名+密码 → `POST /api/login` → 拿 `token` → 持久化 → 跳书架 |
-| 2. 书架列表 | `pages/shelf/shelf.ux` | `@system.fetch` | `GET /api/tasks`（Bearer）→ 与本地已下载合并渲染（书名/书源/状态/进度） |
-| 3. 下载 TXT | `pages/shelf/shelf.ux` + `pages/search/search.ux` | `@system.fetch` + `@system.file` | 搜书→提交下载任务→任务 done 后拉直链 `download_url` 文本→`file.writeText` 落盘 `internal://files` |
-| 4. 离线阅读 | `pages/reader/reader.ux` | `@system.file` | `file.readText` 读本地 TXT → 按固定字符数分页 → 上/下翻页（按钮+点按左右半屏）→ 显示 `当前页/总页数` → 进度持久化 |
-| 5. 删除 | `pages/shelf/shelf.ux` | `@system.file` + `@system.storage` | `file.delete` 删本地 TXT + 删元信息 |
+| 1. 摩柿登录 | `Login/login.ux` | `@system.fetch` + `@system.storage` | 用户名+密码 → `POST /api/login` → 拿 `token` → 持久化 → 跳书架 |
+| 2. 书架列表 | `Shelf/shelf.ux` | `@system.fetch` | `GET /api/tasks`（Bearer）→ 与本地已下载合并渲染（书名/书源/状态/进度） |
+| 3. 下载 TXT | `Shelf/shelf.ux` + `Search/search.ux` | `@system.fetch` + `@system.file` | 搜书→提交下载任务→任务 done 后拉直链 `download_url` 文本→`file.writeText` 落盘 `internal://files` |
+| 4. 离线阅读 | `Reader/reader.ux` | `@system.file` | `file.readText` 读本地 TXT → 按固定字符数分页 → 上/下翻页（按钮+点按左右半屏）→ 显示 `当前页/总页数` → 进度持久化 |
+| 5. 删除 | `Shelf/shelf.ux` | `@system.file` + `@system.storage` | `file.delete` 删本地 TXT + 删元信息 |
 
 页面跳转用 `@system.router`（`push/replace/back`），`reader` 页通过 `router.push` 的 `params` 接收 `bookId/bookName`（页面 `protected` 下声明同名 key）。
 
 ---
 
-## 三、构建 / 安装步骤（AIoT-IDE）
+## 三、构建 / 打包 / 安装（已用 aiot-toolkit 真实构建验证）
 
-> 依据官方「使用 AIoT-IDE」文档。本沙盒**无 IDE、无真机**，以下为在目标开发机上执行的步骤。
+> 本沙盒已用 `aiot-toolkit@2.0.5`（npm npmmirror 源）**真实构建出 .rpk 并签名**。产物在 `dist/`：
+> - `cn.sswwgzs.moshi.novel.debug.1.0.0.rpk`（约 30KB，工具链自带调试证书签名）
+> - `cn.sswwgzs.moshi.novel.release.1.0.0.rpk`（约 22KB，本工程 `sign/` 自签证书签名）
 
-1. **安装 AIoT-IDE**：支持 macOS 14+ / Windows 10+ / Ubuntu 20.04+。mac 下若提示"已损坏"，执行
-   `sudo xattr -r -d com.apple.quarantine <应用路径>`。
-2. **导入工程**：打开 AIoT-IDE →「文件」→「打开项目」→ 选择本目录 `quickapp-moshi-novel/`
-   （也可「新建项目」选 watch 模板后，把 `src/` 覆盖过去）。
-3. **安装依赖**：项目根若无 `.npmrc`，新建并写入 `registry="https://registry.npmmirror.com/"`，
-   再在 IDE 终端执行 `npm i`（依赖 `@aiot-toolkit`）。
-4. **配置模拟器**：右侧开发向导「检查模拟器环境，创建模拟器实例」→ 新建时镜像选手环/watch、
-   屏幕尺寸按手环 9 Pro 实际值（见下方「分辨率假设」）。
-5. **运行调试**：banner 栏选模拟器 →「运行/调试」，底部调试面板可看 Console / DOM / 断点。
-6. **开发包打包**：banner「打包」→ 生成 `dist/*.debug.rpk` 与 `build/`。
-7. **签名（生产包）**：banner「发布」按引导在 `sign/` 生成 `private.pem` 与 `certificate.pem`
-   （需本机装 openssl；或手动
-   `openssl req -newkey rsa:2048 -nodes -keyout private.pem -x509 -days 3650 -out certificate.pem`
-   放入 `sign/`）。再次「发布」生成 `dist/*.release.rpk`。
-8. **安装到手环**：通过 AIoT-IDE 的设备/ADB 流程把 `rpk` 推送到已配对的手环 9 Pro 并启动
-   （具体真机推送通道以 IDE 当前版本为准，**本步骤未经真机验证**）。
+1. **装依赖**：项目根新建 `.npmrc` 写入 `registry="https://registry.npmmirror.com/"`，执行
+   `npm i`（依赖 `aiot-toolkit`）。
+2. **命令行构建**（等价于 IDE 的「打包/发布」）：
+   - 开发包：`npx aiot build` → 生成 `dist/*.debug.rpk` + `build/`
+   - 生产包：`npx aiot release` → 用 `sign/` 证书生成 `dist/*.release.rpk`
+   - 重签名已有 build：`npx aiot resign`
+3. **签名**：本工程 `sign/private.pem` + `sign/certificate.pem` 已用 openssl 自签（10 年）。
+   生产正式发布请替换为你自己的证书；release 模式强制校验 `sign/` 下证书，缺失会报
+   「problem with the certification path」。
+4. **模拟器调试**：`npx aiot createVVD` 创建 Vela 虚拟设备；banner 选设备后运行/调试。
+5. **安装到手环 9 Pro**（**以下真机通道待核实**，沙盒无手环）：
+   - 手环开启「开发者模式 / 调试」，用 ADB 连接（`adb connect <手环IP>:5555`）。
+   - `npx aiot installDbgAndMkp` 安装调试器壳（`org.hapjs.debugger` / `org.hapjs.mockup`）。
+   - 通过 `npx aiot getConnectedDevices` / `getPlatforms` 确认设备与平台，再把 `rpk` 推送安装。
+   - 具体手环型号的开发者模式入口与 rpk 推送命令以 AIoT-IDE 当前版本/官方文档为准。
 
 ---
 
@@ -114,7 +120,39 @@ quickapp-moshi-novel/
 
 ---
 
-## 五、假设清单
+## 五、网桥通道（ESP32，绕开机身 fetch 限制）
+
+**为什么需要**：官方支持明细标注手环 9 Pro 对 `@system.fetch`「不支持」。本工程新增网桥通道，
+让手环把 HTTP 请求交给 ESP32 网桥代为发出（与 AstroBox 宿主同构），真机可在 `direct`/`bridge` 间切换。
+
+**架构**：
+```
+QuickApp(.ux) ──@system.互联通道──> ESP32 网桥(qaic.c) ──HTTP──> novel.sswwgzs.cn
+   http.js(按 transport 分流)        FetchBridge 协议
+   bridge.js(信封收发/解码)          代发请求并回包
+```
+
+**开关**：`src/common/config.js` 顶部 `transport: 'direct' | 'bridge'`（默认 `direct`，改一行即切网桥）。
+
+**与固件 `esp32-firmware/main/qaic.c` 的契约（逐字段已对齐）**：
+- 握手：`{"tag":"__hs__","count":0,"caps":{...}}` → 收 `count:1` → 回 `count:2` → 完成。
+- 请求：`{"tag":"fetch","id":"<n>","url":"<完整URL>","options":{method,headers,body,raw,followRedirects}}`。
+- 单消息响应：`{"tag":"fetch","id","resp":{ok,status,statusText,headers,body,raw,bodyEncoding}}`。
+- 分片响应：`resp.chunked=true` → 收若干 `{"tag":"fetch-chunk","id","seq","total","data"}`，
+  每收一片回 `{"tag":"fetch-ack","id","ack":<下一个缺失连续序号>}`，收齐后逐片 base64 解码再按 UTF-8 拼回。
+- 本端 caps 只声明 `text/base64`、压缩只认 `none`（deflate/lz4 未在手环侧实现，待真机）。
+
+**待真机确证（bridge.js 已用「双原语收敛」隔离）**：Vela 手环侧 `@system.interconnect` 的确切
+模块名与 send/onMessage 调用形式无法从公开文档确证。`bridge.js` 顶部只暴露两个函数
+`sendToBridge(msgObj)` 与 `onBridgeMessage(cb)`，真机联调时**只改这两个函数体**对接真实互联 API，
+其余协议/解码逻辑零改动。已在代码注释标注候选接入点，未编造任何 API 名。
+
+**真机联调步骤**：① 固件 `qaic_init(send,ctx)` 接好串口/BLE 发送；② 把 `config.transport` 改为 `bridge`；
+③ 在 `sendToBridge/onBridgeMessage` 填真实互联调用；④ 装包运行，观察握手日志与首条 `/api/login` 回包。
+
+---
+
+## 六、假设清单
 
 | 项 | 假设值 | 状态 |
 |---|---|---|
@@ -126,36 +164,37 @@ quickapp-moshi-novel/
 
 ---
 
-## 六、无法真机验证的环节（重要）
+## 七、无法真机验证的环节（重要）
 
-本沙盒**无小米手环 9 Pro 真机、无 AIoT-IDE**，只能做**静态校验**，下列环节均未经真机运行验证：
+本沙盒**无小米手环 9 Pro 真机**，已用 `aiot-toolkit` 真实完成 webpack 编译与签名打包，但下列环节仍未经真机运行验证：
 
-1. **官方支持明细显示：小米手环 9 / 9 Pro 对 `@system.fetch` 与 `@system.request` 标注为「不支持」**
-   （见官方 fetch / request 文档「支持明细」表）。本应用网络全部走 `@system.fetch`，
-   **若该限制在目标机型上确实成立，则联网功能在真机上不可用**——需真机/IDE 实测确认。
-   缓解：网络逻辑全部隔离在 `common/http.js`，一旦确认不可用可整体替换为手机侧中转（如
-   `@system.interconnect` 与手机 App 通信）而不动 UI。
-2. `.ux` 文件未经过 AIoT-IDE 编译器编译（沙盒无工具链）；仅对 `.js` 做了 `node --check` 语法校验。
-3. 真机 UI 实际渲染、字体大小、336×480 假设是否贴合、点按/滑动翻页手感。
-4. `rpk` 打包、签名、推送安装到手环的完整流程。
-5. 手环实际可用存储大小、TXT 读写性能与内存占用。
-6. 所有后端接口在**带真实 token、真实下载任务**下的字段与行为（笔记为未登录公开观察）。
+1. **官方支持明细显示：小米手环 9 / 9 Pro 对 `@system.fetch` 与 `@system.request` 标注为「不支持」**。
+   本机直连（`direct`）真机可能不可用——**已提供 `bridge` 网桥通道作为绕开方案**（见第五节），二者可一键切换。
+2. **网桥互联原语待真机确证**：`@system.interconnect` 的真实模块名/调用形式未从文档确证，
+   `bridge.js` 已收敛为 `sendToBridge/onBridgeMessage` 两个待填函数。
+3. 真机 UI 实际渲染、336×480 假设是否贴合、点按翻页手感。
+4. 手环实际可用存储大小、TXT 读写性能与内存占用。
+5. 所有后端接口在**带真实 token、真实下载任务**下的字段与行为（笔记为公开观察/服务器只读实读）。
+6. rpk 在真实手环上的安装、启动与联网（`direct`/`bridge` 两种）。
 
 ---
 
-## 七、本沙盒内已完成的静态校验（可复现）
+## 八、本沙盒内已完成的校验与构建（可复现）
 
 - 所有 `.json`：`python3 -m json.tool` 通过（`package.json`、`src/manifest.json`）。
-- 所有 `.js`：`node --check` 通过（config / session / http / library / reader 共 5 个）。
+- 所有 `.js`：`node --check` 通过（config / session / http / bridge / library / reader 共 6 个）。
+- `.ux` 已通过 `aiot-toolkit@2.0.5` 真实 webpack 编译（`webpack complete` → `build success`）。
+- 已产出签名 `.rpk`（`dist/`）：debug ~30KB、release ~22KB，均含 `META-INF/CERT`，`unzip -l` 验证为合法 zip。
 
 ---
 
-## 八、已知风险 / 与官方文档存疑要点
+## 九、已知风险 / 与官方文档存疑要点
 
-1. **手环 9 Pro 网络能力存疑**（见第六节第 1 条）——本项目最大不确定性。
+1. **手环 9 Pro 本机网络能力存疑**（见第七节第 1 条）——已用 bridge 通道对冲，仍需真机确认。
 2. `router.push` 的参数名：官方文档示例中同时出现 `uri` 与截图里的 `url`，本工程统一采用文档正文示例的 **`uri`**。
 3. 列表渲染使用 `for="{{item in list}}"` + `tid`，事件回调直接传循环变量 `item`；
    不同 Vela 版本对「行内传参」支持可能有差异，真机若不生效需改用 `$idx` 回查。
 4. `file.writeText` 写 5MB 文本在手环上可能较慢/占内存，README 已给出调低 `maxBookSizeBytes` 与
    分段（按章节/按页）落盘的可扩展方向；当前实现为整本落盘。
 5. `manifest.json` 的 `minAPILevel=1`、`deviceTypeList=["watch"]` 为通用取值，真机最低 API 级别需按 SDK 对齐。
+6. 网桥侧 deflate/lz4 压缩与在线流（stream）未在手环端实现（固件当前也回退为 none）；TXT 文本走 text/base64 足够。

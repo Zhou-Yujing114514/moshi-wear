@@ -70,6 +70,7 @@ bool pbuf_message(pbuf_t *w, uint32_t field, pbuf_builder_fn fn, void *ctx)
      * 先构建到 (cap) 区域会破坏布局，因此改用：记录起点，写 key，
      * 然后构建到紧跟其后，构建完成后若溢出则失败。 */
     size_t key_pos = w->pos;
+    (void)key_pos; /* 起点仅用于回滚排查；当前实现不回滚 */
     if (!write_key(w, field, PWF_LEN)) return false;
     size_t len_pos = w->pos;
     /* 预留 varint 长度（最多 5 字节足够） */

@@ -227,7 +227,7 @@ void bridge_start(void)
 
     qaic_init(qaic_send_cb, NULL);
     sar_init(&s_sar,
-             (sar_ble_write_fn)ble_bridge_write, NULL,
+             ble_bridge_write, NULL,
              sar_up_cb, NULL,
              BR_DEFAULT_MAX_WRITE);
 

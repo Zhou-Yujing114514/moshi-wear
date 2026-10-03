@@ -1,11 +1,14 @@
 /**
- * 摩柿小说 —— 网络请求封装（基于 @system.fetch）
+ * 摩柿小说 —— 网络请求封装（统一 direct / bridge 双通道）
  * 统一注入鉴权头、统一错误处理；返回 Promise，页面层以 .then/.catch 使用。
  *
- * 注意：官方支持明细中，小米手环 9 Pro 对 @system.fetch 标注为「不支持」，
- *       本模块按文档 API 编写，真实可用性需真机验证（见 README 风险清单）。
+ * 通道选择（config.transport）：
+ *   - 'direct'：本机 @system.fetch（官方支持明细里手环 9 Pro 标「不支持」）
+ *   - 'bridge'：经 ESP32 网桥（bridge.js，FetchBridge 协议）代为联网
+ * 上层 request()/getText() 与业务代码完全无感。
  */
 import fetch from '@system.fetch'
+import { request as bridgeRequest } from './bridge.js'
 import config from './config.js'
 import { getToken } from './session.js'
 
@@ -29,6 +32,40 @@ export function pickByPath(obj, path) {
 }
 
 /**
+ * 底层收发：统一返回 { code, headers, data }。
+ * data 在 direct+json 模式下是已解析对象，其余为字符串。
+ */
+function sendRaw({ url, method, headers, body, asJson }) {
+  if (config.transport === 'bridge') {
+    // 网桥通道：bridge.js 已完成握手/分片/解码，body 是 UTF-8 字符串
+    return bridgeRequest({ url: url, method: method, headers: headers, body: body || '' })
+      .then((r) => {
+        let data = r.body
+        if (asJson && typeof data === 'string' && data) {
+          try {
+            data = JSON.parse(data)
+          } catch (e) {
+            // 非 JSON 时保留原字符串
+          }
+        }
+        return { code: r.status, headers: r.headers, data: data }
+      })
+  }
+  // 直连通道
+  return new Promise((resolve, reject) => {
+    fetch.fetch({
+      url: url,
+      method: method,
+      data: body,
+      header: headers,
+      responseType: asJson ? 'json' : 'text',
+      success: (res) => resolve({ code: res.code, headers: res.headers, data: res.data }),
+      fail: (err, code) => reject(new Error('网络请求失败 code=' + code + ' msg=' + err))
+    })
+  })
+}
+
+/**
  * 通用 JSON 请求
  * @param {string} path 接口路径（相对 apiBase）或完整 http(s) URL
  * @param {object} opts { method, data(对象), auth }
@@ -41,25 +78,11 @@ export function request(path, opts) {
   const url = /^https?:\/\//.test(path) ? path : config.apiBase + path
   const body = options.data == null ? undefined : JSON.stringify(options.data)
 
-  return new Promise((resolve, reject) => {
-    fetch.fetch({
-      url: url,
-      method: method,
-      data: body,
-      header: buildHeader(auth),
-      responseType: 'json',
-      success: (res) => {
-        if (res.code >= 200 && res.code < 300) {
-          resolve(res.data)
-        } else {
-          reject(new Error('HTTP ' + res.code))
-        }
-      },
-      fail: (err, code) => {
-        reject(new Error('网络请求失败 code=' + code + ' msg=' + err))
-      }
+  return sendRaw({ url, method, headers: buildHeader(auth), body, asJson: true })
+    .then((res) => {
+      if (res.code >= 200 && res.code < 300) return res.data
+      throw new Error('HTTP ' + res.code)
     })
-  })
 }
 
 /**
@@ -71,22 +94,11 @@ export function request(path, opts) {
 export function getText(url) {
   // 相对路径统一解析为「基址 + 路径」，兼容 /dl/... 与 /downloads/... 两种形态
   const fullUrl = /^https?:\/\//.test(url) ? url : config.apiBase + url
-  return new Promise((resolve, reject) => {
-    fetch.fetch({
-      url: fullUrl,
-      method: 'GET',
-      header: buildHeader(true),
-      responseType: 'text',
-      success: (res) => {
-        if (res.code >= 200 && res.code < 300) {
-          resolve(typeof res.data === 'string' ? res.data : String(res.data || ''))
-        } else {
-          reject(new Error('HTTP ' + res.code))
-        }
-      },
-      fail: (err, code) => {
-        reject(new Error('下载失败 code=' + code + ' msg=' + err))
+  return sendRaw({ url: fullUrl, method: 'GET', headers: buildHeader(true), body: undefined, asJson: false })
+    .then((res) => {
+      if (res.code >= 200 && res.code < 300) {
+        return typeof res.data === 'string' ? res.data : String(res.data || '')
       }
+      throw new Error('HTTP ' + res.code)
     })
-  })
 }

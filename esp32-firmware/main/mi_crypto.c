@@ -27,10 +27,9 @@ void mi_kdf(const uint8_t authkey[16],
 
     /* PRK = HMAC-SHA256(init_key, authkey) */
     uint8_t prk[32];
-    size_t olen = 0;
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
                     init_key, sizeof(init_key),
-                    authkey, 16, prk, &olen);
+                    authkey, 16, prk);
 
     /* HKDF-Expand：T1=HMAC(PRK, ""‖info‖01)，T2=HMAC(PRK,T1‖info‖02) */
     uint8_t block64[64];
@@ -43,9 +42,9 @@ void mi_kdf(const uint8_t authkey[16],
         memcpy(buf + blen, prev, 32); blen += 32;
         memcpy(buf + blen, INFO_TAG, sizeof(INFO_TAG) - 1); blen += sizeof(INFO_TAG) - 1;
         buf[blen++] = counter;
-        uint8_t ti[32]; size_t ti_len = 0;
+        uint8_t ti[32];
         mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                        prk, 32, buf, blen, ti, &ti_len);
+                        prk, 32, buf, blen, ti);
         memcpy(block64 + off, ti, 32);
         off += 32;
         memcpy(prev, ti, 32);
@@ -73,9 +72,8 @@ void mi_device_sign_expect(const mi_session_keys_t *k,
     uint8_t msg[32];
     memcpy(msg, w_random, 16);
     memcpy(msg + 16, p_random, 16);
-    size_t olen = 0;
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                    k->dec_key, 16, msg, sizeof(msg), out, &olen);
+                    k->dec_key, 16, msg, sizeof(msg), out);
     memset(msg, 0, sizeof(msg));
 }
 
@@ -88,9 +86,8 @@ void mi_app_sign(const mi_session_keys_t *k,
     uint8_t msg[32];
     memcpy(msg, p_random, 16);
     memcpy(msg + 16, w_random, 16);
-    size_t olen = 0;
     mbedtls_md_hmac(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256),
-                    k->enc_key, 16, msg, sizeof(msg), out, &olen);
+                    k->enc_key, 16, msg, sizeof(msg), out);
     memset(msg, 0, sizeof(msg));
 }
 

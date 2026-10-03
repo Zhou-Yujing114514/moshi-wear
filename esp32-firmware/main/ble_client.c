@@ -49,8 +49,7 @@ uint16_t ble_bridge_max_write_len(void)
 
 /* ---------- GATT 发现 ---------- */
 static int gatt_disc_cb(uint16_t conn, const struct ble_gatt_error *err,
-                        uint16_t svc_end, const struct ble_gatt_chr *chr,
-                        void *arg)
+                        const struct ble_gatt_chr *chr, void *arg)
 {
     if (err && err->status != 0) {
         ESP_LOGE(TAG_BLE_CONN, "chr disc err=%d", err->status);
@@ -59,7 +58,7 @@ static int gatt_disc_cb(uint16_t conn, const struct ble_gatt_error *err,
     if (chr) {
         /* 按 16 位 UUID 匹配 */
         uint16_t u16 = 0;
-        if (chr->uuid.type == BLE_UUID_TYPE_16) u16 = chr->uuid.u16.value;
+        if (chr->uuid.u.type == BLE_UUID_TYPE_16) u16 = chr->uuid.u16.value;
         if (u16 == CHAR_TX_UUID16) {
             s_attr_tx = chr->val_handle;
             ESP_LOGI(TAG_BLE_CONN, "found TX(write) handle=%u", s_attr_tx);
@@ -164,7 +163,11 @@ static int scan_cb(struct ble_gap_event *event, void *arg)
 static void ble_on_sync(void)
 {
     ble_hs_id_infer_auto(0, NULL);
-    struct ble_gap_disc_params dp = { .passive = 0, .filter_dups = 1 };
+    struct ble_gap_disc_params dp = {
+        .itvl = 0x0010, .window = 0x0010,
+        .filter_policy = 0, .limited = 0,
+        .passive = 0, .filter_duplicates = 1,
+    };
     ble_gap_disc(BLE_OWN_ADDR_PUBLIC, BLE_HS_FOREVER, &dp, scan_cb, NULL);
 }
 
@@ -179,8 +182,9 @@ static void host_task(void *p)
     nimble_port_freertos_deinit();
 }
 
-int ble_bridge_write(const uint8_t *data, size_t len)
+int ble_bridge_write(const uint8_t *data, size_t len, void *ctx)
 {
+    (void)ctx;
     if (!ble_bridge_connected() || !s_attr_tx) return -1;
     /* Write Without Response */
     return ble_gattc_write_no_rsp_flat(s_conn_handle, s_attr_tx, data, len);

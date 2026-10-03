@@ -107,8 +107,8 @@
 <script>
 import router from '@system.router'
 import prompt from '@system.prompt'
-import config from '../../common/config.js'
-import { request, pickByPath } from '../../common/http.js'
+import config from '../common/config.js'
+import { request, pickByPath } from '../common/http.js'
 
 /**
  * 搜书页逻辑

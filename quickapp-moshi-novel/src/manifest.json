@@ -7,6 +7,7 @@
   "minAPILevel": 1,
   "deviceTypeList": ["watch"],
   "features": [
+    { "name": "system.router" },
     { "name": "system.fetch" },
     { "name": "system.request" },
     { "name": "system.storage" },

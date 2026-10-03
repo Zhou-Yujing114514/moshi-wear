@@ -41,7 +41,9 @@ CONFIG_BT_NIMBLE_ROLE_BROADCASTER=n
 # 中心角色需要 GATT client
 CONFIG_BT_NIMBLE_GATT_CLIENT_ENABLE=y
 CONFIG_BT_NIMBLE_SM_LEGACY=y
-CONFIG_BT_NIMBLE_SM_SC=n
+# SM_SC 必须开启：ble_sm_alg_aes_cmac 仅在 SC 下编译，
+# 而 ble_att_svr 无条件引用它（否则链接报 undefined reference）。
+CONFIG_BT_NIMBLE_SM_SC=y
 # 我们自己实现配对密钥（authkey），不依赖 NimBLE 的 bonding 持久化；
 # 但仍允许 SM 以完成底层加密协商（若手环要求）。
 CONFIG_BT_NIMBLE_NVS_PERSIST=y

@@ -64,9 +64,9 @@
 <script>
 import router from '@system.router'
 import prompt from '@system.prompt'
-import config from '../../common/config.js'
-import { request, pickByPath } from '../../common/http.js'
-import { saveSession } from '../../common/session.js'
+import config from '../common/config.js'
+import { request, pickByPath } from '../common/http.js'
+import { saveSession } from '../common/session.js'
 
 /**
  * 登录页逻辑

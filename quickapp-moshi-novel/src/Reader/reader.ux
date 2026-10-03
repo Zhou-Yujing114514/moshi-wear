@@ -69,9 +69,9 @@
 import router from '@system.router'
 import prompt from '@system.prompt'
 import file from '@system.file'
-import config from '../../common/config.js'
-import { bookFileUri, findBook, updateProgress } from '../../common/library.js'
-import { splitPages, clampPage } from '../../common/reader.js'
+import config from '../common/config.js'
+import { bookFileUri, findBook, updateProgress } from '../common/library.js'
+import { splitPages, clampPage } from '../common/reader.js'
 
 /**
  * 阅读器逻辑
