@@ -1,0 +1,130 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<import name="number" src="../../components/number_choose/number_choose"></import>
+<template>
+  <div class="page" style="flex-direction: column;">
+
+	<div class="preview-item">
+		<text style="font-size: {{fontSize}}px;font-weight: bold;color: white;opacity:{{opacity/100}};text-overflow: ellipsis;">
+			文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本预览文本
+		</text>
+	</div>
+	<number style="position: absolute;bottom:6px" max.static="50" min.static="5" step.static="1" value="{{fontSize}}" @change="change" name.static="当前字号"></number>
+
+	<img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+	<img static src="/common/images/reset.png" @click="reset" style="position: absolute;left: 258px;top: 6px;width: 72px;height: 72px;"/>
+	<text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+	  {{nowTime}}
+	</text>
+	<text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+		显示字号
+	</text>
+  </div>
+</template>
+
+<script>
+import router from '@system.router'
+import storage from '../../utils/storage.js'
+
+export default {
+  private: {
+	fontSize: 28,
+	opacity: 100,
+	nowTime: "00:00",
+	timer: null,
+	timeFormat: '24h'
+  },
+  
+  updateTime() {
+	const date = new Date();
+	let hours = date.getHours();
+	let minutes = date.getMinutes();
+	if (this.timeFormat === '12h') {
+		let ampm = hours >= 12 ? '下午' : '上午';
+		hours = hours % 12;
+		hours = hours ? hours : 12;
+		minutes = minutes < 10 ? '0' + minutes : minutes;
+		this.nowTime = `${ampm} ${hours}:${minutes}`;
+	} else {
+		hours = hours < 10 ? '0' + hours : hours;
+		minutes = minutes < 10 ? '0' + minutes : minutes;
+		this.nowTime = `${hours}:${minutes}`;
+	}
+  },
+
+  onInit() {
+	storage.get({
+		key: 'EBOOK_TIME_FORMAT',
+		success: (data) => {
+			if(data) this.timeFormat = data;
+			this.updateTime();
+		},
+		fail: () => {
+			this.updateTime();
+		}
+	});
+	
+	this.timer = setInterval(() => {
+		this.updateTime();
+	}, 1000);
+	
+    storage.get({
+      key: 'EBOOK_FONT',
+      success: (data) => {
+        if (data) {
+          this.fontSize = parseInt(data);
+        }
+      }
+	});
+	
+	storage.get({
+		key: "EBOOK_OPACITY",
+		success: (data) => {
+			if (data) {
+				this.opacity = parseFloat(data);
+			}
+		}
+	});
+  },
+
+  onDestroy() {
+	if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  },
+
+  change(e) {
+	this.fontSize = e.detail.value;
+	storage.set({
+		key: 'EBOOK_FONT',
+		value: this.fontSize.toString()
+	});
+  },
+
+  reset() {
+	this.fontSize = 28;
+	storage.set({
+		key: "EBOOK_FONT",
+		value: this.fontSize.toString(),
+	});
+  },
+
+  back() {
+	storage.set({
+		key: 'EBOOK_FONT',
+		value: this.fontSize.toString()
+	});
+  	router.back();
+  }
+}
+</script>
+
+<style>
+  @import '../../common/style.css';
+</style>

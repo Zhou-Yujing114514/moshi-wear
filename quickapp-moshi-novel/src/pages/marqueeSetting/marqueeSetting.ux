@@ -1,0 +1,230 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<template>
+	<div class="page" style="flex-direction: column;">
+	  <list class="list">
+		  <list-item class="item" @click="toggleShelfMarquee" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>书架</text>
+				  <text class="itemtext2" static>内容滚动显示</text>
+			  </div>
+			  <img src="{{shelfMarqueeEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+		  </list-item>
+		  <list-item class="item" @click="toggleBookmarkMarquee" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>书签列表</text>
+				  <text class="itemtext2" static>页面标题滚动</text>
+			  </div>
+			  <img src="{{bookmarkMarqueeEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+		  </list-item>
+		  <list-item class="item" @click="toggleBookinfoMarquee" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>书籍详情</text>
+				  <text class="itemtext2" static>内容滚动显示</text>
+			  </div>
+			  <img src="{{bookinfoMarqueeEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+		  </list-item>
+		  <list-item class="item" @click="toggleChapterListItemMarquee" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>章节列表</text>
+				  <text class="itemtext2" static>章节标题滚动</text>
+			  </div>
+			  <img src="{{chapterListItemMarqueeEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+		  </list-item>
+		  <list-item class="item" @click="toggleChapterTitleMarquee" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>章节列表</text>
+				  <text class="itemtext2" static>页面标题滚动</text>
+			  </div>
+			  <img src="{{chapterTitleMarqueeEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+		  </list-item>
+		  <list-item class="item" @click="toggleTextReaderMarquee" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>书籍阅读器</text>
+				  <text class="itemtext2" static>页面标题滚动</text>
+			  </div>
+			  <img src="{{textReaderMarqueeEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+		  </list-item>
+		  <list-item class="item" @click="toggleDetailProgressMarquee" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>书籍阅读器</text>
+				  <text class="itemtext2" static>底部进度滚动</text>
+			  </div>
+			  <img src="{{detailProgressMarqueeEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+		  </list-item>
+		  <list-item class="item" @click="toggleDetailMarquee" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>文本阅读页</text>
+				  <text class="itemtext2" static>页面标题滚动</text>
+			  </div>
+			  <img src="{{detailMarqueeEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+		  </list-item>
+	  </list>
+	  
+	  <img static src="/common/images/hd.png" style="position: absolute;left: 0px;top: 0px;width: 336px;height: 102px;" />
+	  <img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+	  <text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+		{{nowTime}}
+	  </text>
+	  <text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+		  跑马灯设置
+	  </text>
+	</div>
+  </template>
+  
+  <script>
+  import router from '@system.router'
+  import storage from '../../utils/storage.js'
+  
+  const SETTINGS_MAP = [
+	{ prop: 'shelfMarqueeEnabled', key: 'EBOOK_SHELF_MARQUEE_ENABLED', def: false },
+	{ prop: 'bookmarkMarqueeEnabled', key: 'EBOOK_BOOKMARK_MARQUEE_ENABLED', def: false },
+	{ prop: 'bookinfoMarqueeEnabled', key: 'EBOOK_BOOKINFO_MARQUEE_ENABLED', def: true },
+	{ prop: 'chapterListMarqueeEnabled', key: 'EBOOK_CHAPTER_LIST_MARQUEE_ENABLED', def: false },
+	{ prop: 'textReaderMarqueeEnabled', key: 'EBOOK_TEXT_READER_MARQUEE_ENABLED', def: false },
+	{ prop: 'detailMarqueeEnabled', key: 'EBOOK_DETAIL_MARQUEE_ENABLED', def: false },
+	{ prop: 'detailProgressMarqueeEnabled', key: 'EBOOK_DETAIL_PROGRESS_MARQUEE_ENABLED', def: false }
+  ];
+  
+  export default {
+	private: {
+	  shelfMarqueeEnabled: false,
+	  bookmarkMarqueeEnabled: false,
+	  bookinfoMarqueeEnabled: true,
+	  chapterListItemMarqueeEnabled: false,
+	  chapterTitleMarqueeEnabled: false,
+	  textReaderMarqueeEnabled: false,
+	  detailMarqueeEnabled: false,
+	  detailProgressMarqueeEnabled: false,
+	  nowTime: "00:00",
+	  timer: null,
+	  timeFormat: '24h'
+	},
+  
+	onInit() {
+	  storage.get({
+		  key: 'EBOOK_TIME_FORMAT',
+		  success: (data) => {
+			  if(data) this.timeFormat = data;
+			  this.updateTime();
+		  },
+		  fail: () => this.updateTime()
+	  });
+  
+	  this.timer = setInterval(() => {
+		this.updateTime();
+	  }, 60000);
+  
+	  const settings = [
+		{ key: 'EBOOK_SHELF_MARQUEE_ENABLED', prop: 'shelfMarqueeEnabled', default: 'false' },
+		{ key: 'EBOOK_BOOKMARK_MARQUEE_ENABLED', prop: 'bookmarkMarqueeEnabled', default: 'false' },
+		{ key: 'EBOOK_BOOKINFO_MARQUEE_ENABLED', prop: 'bookinfoMarqueeEnabled', default: 'true' },
+		{ key: 'EBOOK_CHAPTER_LIST_MARQUEE_ENABLED', prop: 'chapterListMarqueeEnabled', default: 'false' },
+		{ key: 'EBOOK_CHAPTER_LIST_ITEM_MARQUEE_ENABLED', prop: 'chapterListItemMarqueeEnabled', default: 'false' },
+		{ key: 'EBOOK_TEXT_READER_MARQUEE_ENABLED', prop: 'textReaderMarqueeEnabled', default: 'false' },
+		{ key: 'EBOOK_DETAIL_MARQUEE_ENABLED', prop: 'detailMarqueeEnabled', default: 'false' },
+		{ key: 'EBOOK_DETAIL_PROGRESS_MARQUEE_ENABLED', prop: 'detailProgressMarqueeEnabled', default: 'false' }
+	  ];
+  
+	  settings.forEach(setting => {
+		storage.get({
+		  key: setting.key,
+		  default: setting.default,
+		  success: (data) => {
+			this[setting.prop] = data === 'true';
+		  }
+		});
+	  });
+	},
+  
+	onDestroy() {
+	  if (this.timer) {
+		clearInterval(this.timer);
+		this.timer = null;
+	  }
+	},
+  
+	back() {
+		router.back();
+	},
+  
+	updateTime() {
+	  const date = new Date();
+	  let hours = date.getHours();
+	  let minutes = date.getMinutes();
+	  if (this.timeFormat === '12h') {
+		  let ampm = hours >= 12 ? '下午' : '上午';
+		  hours = hours % 12;
+		  hours = hours ? hours : 12;
+		  minutes = minutes < 10 ? '0' + minutes : minutes;
+		  this.nowTime = `${ampm} ${hours}:${minutes}`;
+	  } else {
+		  hours = hours < 10 ? '0' + hours : hours;
+		  minutes = minutes < 10 ? '0' + minutes : minutes;
+		  this.nowTime = `${hours}:${minutes}`;
+	  }
+	},
+  
+	toggleSetting(prop, key) {
+	  this[prop] = !this[prop];
+	  storage.set({
+		  key: key,
+		  value: this[prop].toString()
+	  });
+	},
+  
+	toggleShelfMarquee() {
+	  this.shelfMarqueeEnabled = !this.shelfMarqueeEnabled;
+	  storage.set({ key: 'EBOOK_SHELF_MARQUEE_ENABLED', value: this.shelfMarqueeEnabled.toString() });
+	},
+  
+	toggleBookmarkMarquee() {
+	  this.bookmarkMarqueeEnabled = !this.bookmarkMarqueeEnabled;
+	  storage.set({ key: 'EBOOK_BOOKMARK_MARQUEE_ENABLED', value: this.bookmarkMarqueeEnabled.toString() });
+	},
+  
+	toggleBookinfoMarquee() {
+	  this.bookinfoMarqueeEnabled = !this.bookinfoMarqueeEnabled;
+	  storage.set({ key: 'EBOOK_BOOKINFO_MARQUEE_ENABLED', value: this.bookinfoMarqueeEnabled.toString() });
+	},
+	toggleChapterListItemMarquee() {
+	  this.chapterListItemMarqueeEnabled = !this.chapterListItemMarqueeEnabled;
+	  storage.set({
+		  key: 'EBOOK_CHAPTER_LIST_ITEM_MARQUEE_ENABLED',
+		  value: this.chapterListItemMarqueeEnabled.toString()
+	  });
+	},
+	toggleChapterTitleMarquee() {
+	  this.chapterTitleMarqueeEnabled = !this.chapterTitleMarqueeEnabled;
+	  storage.set({
+		  key: 'EBOOK_CHAPTER_TITLE_MARQUEE_ENABLED',
+		  value: this.chapterTitleMarqueeEnabled.toString()
+	  });
+	},
+  
+	toggleTextReaderMarquee() {
+	  this.textReaderMarqueeEnabled = !this.textReaderMarqueeEnabled;
+	  storage.set({ key: 'EBOOK_TEXT_READER_MARQUEE_ENABLED', value: this.textReaderMarqueeEnabled.toString() });
+	},
+  
+	toggleDetailMarquee() {
+	  this.detailMarqueeEnabled = !this.detailMarqueeEnabled;
+	  storage.set({ key: 'EBOOK_DETAIL_MARQUEE_ENABLED', value: this.detailMarqueeEnabled.toString() });
+	},
+  
+	toggleDetailProgressMarquee() {
+	  this.detailProgressMarqueeEnabled = !this.detailProgressMarqueeEnabled;
+	  storage.set({ key: 'EBOOK_DETAIL_PROGRESS_MARQUEE_ENABLED', value: this.detailProgressMarqueeEnabled.toString() });
+	}
+  }
+  </script>
+  
+  <style>
+	@import '../../common/style.css';
+  </style>
+  

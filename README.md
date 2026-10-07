@@ -2,10 +2,15 @@
 
 面向小米手环 9 Pro（Vela 系统）的双模块从零自研工程：
 
-1. **摩柿小说 QuickApp**（`quickapp-moshi-novel/`）—— 运行在手环上的 Vela JS 快应用：摩柿账号登录 → 书架/下载任务列表 → 搜索选书 → 下载 TXT 到本地 → 离线分页阅读 → 删除本地小说。
+1. **摩柿小说 QuickApp**（`quickapp-moshi-novel/`）—— 运行在手环上的 Vela JS 快应用：摩柿账号登录 → 搜索选书 → 下载 TXT → 导入阅读引擎 → 章节/书签/双模式离线阅读。
 2. **ESP32 网桥固件**（`esp32-firmware/`）—— 跳过手机：ESP32 插电自启 → 连 WiFi → BLE 直连手环（0xFE95）→ 桥接手环与互联网。角色等价于「手机 + AstroBox」。
 
 两份共享笔记（`shared/`）为两模块的共同依据：后端真实接口规范、Vela 互联协议全链路逆向。
+
+> **QuickApp 2.0.0：** 本地阅读引擎、阅读器、书签、章节与阅读设置极仿并移植自
+> 开源项目「弦电子书」（AGPL-3.0，https://github.com/youshen2/com.bandbbs.ebook ）；
+> 摩柿网络层（网桥/登录/搜索）保留。按 AGPL-3.0 要求，本仓库以 AGPL-3.0 开源
+> （见 `LICENSE` 与 `NOTICE`，逐文件移植清单见 `quickapp-moshi-novel/NOTICE`）。
 
 ---
 
@@ -15,13 +20,21 @@
 /home/user/Doubao/chats/38445255839356162/
 ├── README.md                     ← 本文件（总览）
 ├── quickapp-moshi-novel/         ← 模块 A：摩柿小说手环快应用（Vela JS）
-│   ├── README.md                 ←   构建/安装/网桥通道/风险清单
-│   ├── package.json
-│   ├── dist/                     ←   ✅ 已真实打包（aiot-toolkit@2.0.5 构建，npmmirror 源）
-│   │   ├── cn.sswwgzs.moshi.novel.release.1.0.0.rpk  （23,556 B，2026-10-03 重建证书签名）
-│   │   └── cn.sswwgzs.moshi.novel.debug.1.0.0.rpk    （30,969 B，工具链调试证书签名）
-│   └── src/  (manifest.json, app.ux, common/{config,http,bridge,session,library,reader}.js,
-│              Login/ Shelf/ Search/ Reader/ —— Vela 工具链实际布局)
+│   ├── README.md                 ←   构建/安装/网桥通道/移植/风险清单
+│   ├── LICENSE / NOTICE          ←   AGPL-3.0 与移植来源清单
+│   ├── package.json              ←   build/release 带 --enable-custom-component
+│   └── src/
+│       ├── manifest.json, app.ux
+│       ├── common/  (config/http/bridge/session/library/reader.js + style.css + images/)
+│       ├── utils/   (bookStorage/chapterManager/readingTimeStorage/illustration/
+│       │            storage/storageUtils/runAsyncFunc/XiaomiError/str2abWrite +
+│       │            importer.js 适配层 + coverMaker.js 封面生成)
+│       ├── components/number_choose/
+│       ├── Login/ Search/
+│       └── pages/  (index 书架、detail 阅读器、list/readPresent/readPercent、
+│                    bookmarks/editBookmark/autoRead/confirm、illustrationViewer/
+│                    bookinfo/readingTime/detailsetting/textReader、downloads，
+│                    及 28 个阅读设置页)
 ├── esp32-firmware/               ← 模块 B：ESP32 网桥固件（ESP-IDF v5.3, C，✅ 已真实编译）
 │   ├── README.md                 ←   构建/烧录/排错/许可/待核实清单
 │   ├── sdkconfig.defaults, partitions.csv, CMakeLists.txt

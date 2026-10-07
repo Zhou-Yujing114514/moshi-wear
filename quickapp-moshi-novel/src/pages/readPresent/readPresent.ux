@@ -1,0 +1,155 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<template>
+	<div class="page" style="flex-direction: column;">
+	  <div class="preview-item" style="height: 115px;top: 86px;">
+		  <text style="font-size: 36px;font-weight:bold;color: white;width: 100%;text-align: center;">
+			  {{inputPage}}
+		  </text>
+		  <text style="font-size: 24px;font-weight:bold;color: rgba(255, 255, 255, 0.6);width: 100%;text-align: center;">
+			  共 {{syncedChapters}} / {{totalChapters}} 章
+		  </text>
+	  </div>
+	  <div class="row" style="top:209px">
+		  <img static src="/common/images/num_pad/7.png" @click="onClick('7')"/>
+		  <img static src="/common/images/num_pad/8.png" @click="onClick('8')"/>
+		  <img static src="/common/images/num_pad/9.png" @click="onClick('9')"/>
+	  </div>
+	  <div class="row" style="top:276px">
+		  <img static src="/common/images/num_pad/4.png" @click="onClick('4')"/>
+		  <img static src="/common/images/num_pad/5.png" @click="onClick('5')"/>
+		  <img static src="/common/images/num_pad/6.png" @click="onClick('6')"/>
+	  </div>
+	  <div class="row" style="top:343px">
+		  <img static src="/common/images/num_pad/1.png" @click="onClick('1')"/>
+		  <img static src="/common/images/num_pad/2.png" @click="onClick('2')"/>
+		  <img static src="/common/images/num_pad/3.png" @click="onClick('3')"/>
+	  </div>
+	  <div class="row" style="top:410px">
+		  <img static src="/common/images/num_pad/0.png" @click="onClick('0')"/>
+		  <img static src="/common/images/num_pad/del.png" @click="onClick('del')"/>
+	  </div>
+  
+	  <img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+	  <img static src="/common/images/conform.png" @click="onClick('conform')" style="position: absolute;left: 258px;top: 6px;width: 72px;height: 72px;"/>
+	  <text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+		{{nowTime}}
+	  </text>
+	  <text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+		  跳转章节
+	  </text>
+	</div>
+</template>
+  
+<script>
+import router from '@system.router'
+import prompt from '@system.prompt'
+import bookStorage from '../../utils/bookStorage.js'
+import chapterManager from '../../utils/chapterManager.js'
+
+export default {
+    private: {
+        inputPage: '0',
+        nowTime: "00:00",
+        timer: null,
+        totalChapters: 1,
+        syncedChapters: 1
+    },
+    protected: {
+        name: ''
+    },
+    onInit() {
+        this.updateTime();
+        this.timer = setInterval(() => {
+            this.updateTime();
+        }, 60000);
+        this.loadData();
+    },
+    onDestroy() {
+        if (this.timer) {
+            clearInterval(this.timer);
+            this.timer = null;
+        }
+    },
+    updateTime() {
+        const date = new Date();
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        this.nowTime = `${hours}:${minutes}`;
+    },
+    async loadData() {
+        this.totalChapters = await chapterManager.getTotalChapters(this.name);
+        this.syncedChapters = await chapterManager.getSyncedChapters(this.name);
+        const progress = await bookStorage.get(this.name);
+        
+        if (progress && progress.chapterIndex != null) {
+            this.inputPage = (progress.chapterIndex + 1).toString();
+        } else {
+            this.inputPage = '1';
+        }
+    },
+    async onClick(num) {
+        if (num === 'del') {
+            this.inputPage = this.inputPage.length > 1 ? this.inputPage.slice(0, -1) : '0';
+            return;
+        }
+
+        if (num === 'conform') {
+            if (this.totalChapters === 0) return;
+
+            let targetChapterNum = parseInt(this.inputPage);
+            targetChapterNum = isNaN(targetChapterNum) || targetChapterNum < 1 ? 1 : targetChapterNum;
+            
+            if (this.syncedChapters > 0 && targetChapterNum > this.syncedChapters) {
+                targetChapterNum = this.syncedChapters;
+            }
+
+            try {
+                const progress = await bookStorage.get(this.name) || {};
+                progress.chapterIndex = targetChapterNum - 1;
+                progress.offsetInChapter = 0;
+                progress.scrollOffset = 0;
+                await bookStorage.set(this.name, progress);
+                
+                prompt.showToast({ message: '设置成功', duration: 1000 });
+                
+                globalThis.justJumpedFromPageNumber = true;
+                globalThis.justJumpedChapterIndex = progress.chapterIndex;
+                
+                router.back();
+            } catch (e) {
+                prompt.showToast({ message: '设置失败', duration: 2000 });
+            }
+            return;
+        }
+
+        const currentVal = this.inputPage === '0' ? '' : this.inputPage;
+        const newValStr = currentVal + num;
+        
+        if (parseInt(newValStr) > this.syncedChapters) {
+            prompt.showToast({ message: `最大章节为 ${this.syncedChapters}`, duration: 1000 });
+        } else {
+            this.inputPage = newValStr;
+        }
+    },
+    back() {
+        router.back();
+    }
+}
+</script>
+  
+<style>
+@import '../../common/style.css';
+.row {
+    position:absolute;
+    width:336px;
+    height:64px;
+    padding:0px 6px;
+    justify-content: space-between;
+}
+</style>

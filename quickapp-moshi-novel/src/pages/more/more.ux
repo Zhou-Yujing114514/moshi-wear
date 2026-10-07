@@ -1,0 +1,163 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<template>
+	<div class="page" style="flex-direction: column;">
+  
+	<list class="list">
+		<list-item class="item" @click="routerTo('readingSetting')" type="item">
+			<div class="item-content">
+				<text class="itemtext" static>阅读设置</text>
+				<text class="itemtext2" static>字体、亮度等</text>
+			</div>
+			<img src="/common/images/enter.png" class="arrow" static/>
+		</list-item>
+		<list-item class="item" @click="routerTo('performanceSetting')" type="item">
+			<div class="item-content">
+				<text class="itemtext" static>性能设置</text>
+				<text class="itemtext2" static>分段大小等</text>
+			</div>
+			<img src="/common/images/enter.png" class="arrow" static/>
+		</list-item>
+		  <list-item class="item" @click="routerTo('shelfSetting')" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>书架设置</text>
+				  <text class="itemtext2" static>书架样式等</text>
+			  </div>
+			  <img src="/common/images/enter.png" class="arrow" static/>
+		  </list-item>
+		  <list-item class="item" @click="routerTo('interactionSetting')" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>交互设置</text>
+				  <text class="itemtext2" static>手势、按键等</text>
+			  </div>
+			  <img src="/common/images/enter.png" class="arrow" static/>
+		  </list-item>
+	      <list-item class="item" @click="routerTo('storageManagement')" type="item">
+		  	  <div class="item-content">
+				<text class="itemtext" static>存储管理</text>
+				  <text class="itemtext2" static>管理存储数据</text>
+			  </div>
+			  <img src="/common/images/enter.png" class="arrow" static/>
+		  </list-item>
+		  <list-item class="item" @click="openDownloads" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>下载管理</text>
+				  <text class="itemtext2" static>查看下载任务并导入书籍</text>
+			  </div>
+			  <img src="/common/images/enter.png" class="arrow" static />
+		  </list-item>
+		  <list-item class="item" @click="routerTo('readingTime')" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>阅读时长</text>
+				  <text class="itemtext2" static>查看全局阅读数据</text>
+			  </div>
+			  <img src="/common/images/enter.png" class="arrow" static />
+		  </list-item>
+		  <list-item class="item" @click="routerTo('about')" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>关于</text>
+				  <text class="itemtext2" static>关于电子书</text>
+			  </div>
+			  <img src="/common/images/enter.png" class="arrow" static />
+		  </list-item>
+	  </list>
+  
+	  
+	  <img static src="/common/images/hd.png" style="position: absolute;left: 0px;top: 0px;width: 336px;height: 102px;" />
+	  <img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+	  <text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+		{{nowTime}}
+	  </text>
+	  <text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+		  设置
+	  </text>
+	</div>
+</template>
+  
+<script>
+  import router from '@system.router'
+  import storage from '../../utils/storage.js'
+
+  export default {
+	private: {
+	  nowTime: "00:00",
+	  timer: null,
+      timeFormat: '24h'
+	},
+
+	onInit() {
+      this.loadSettings();
+      // 优化：因为界面只显示到分钟，定时器没必要1秒(1000)刷新一次，改成60秒(60000)更省电
+	  this.timer = setInterval(() => {
+		this.updateTime();
+	  }, 60000);
+	},
+
+	onShow() {
+	  this.loadSettings();
+	},
+
+	onDestroy() {
+	  if (this.timer) {
+        clearInterval(this.timer);
+        this.timer = null;
+      }
+	},
+
+	loadSettings() {
+      storage.get({
+        key: 'EBOOK_TIME_FORMAT',
+        success: (data) => {
+            if (data) {
+                this.timeFormat = data;
+            }
+            this.updateTime();
+        },
+        fail: () => {
+            this.updateTime();
+        }
+      });
+	},
+
+	updateTime() {
+	  const date = new Date();
+	  let hours = date.getHours();
+	  let minutes = date.getMinutes();
+
+      if (this.timeFormat === '12h') {
+          let ampm = hours >= 12 ? '下午' : '上午';
+          hours = hours % 12;
+          hours = hours ? hours : 12;
+          minutes = minutes < 10 ? '0' + minutes : minutes;
+          this.nowTime = `${ampm} ${hours}:${minutes}`;
+      } else {
+          hours = hours < 10 ? '0' + hours : hours;
+          minutes = minutes < 10 ? '0' + minutes : minutes;
+          this.nowTime = `${hours}:${minutes}`;
+      }
+	},
+
+	routerTo(url) {
+	  router.push({
+		uri: '/pages/' + url
+	  })
+	},
+
+	openDownloads() {
+	  router.push({ uri: '/pages/downloads' })
+	},
+
+	back() {
+	  router.back();
+	}
+  }
+</script>
+
+<style>
+  @import '../../common/style.css';
+</style>

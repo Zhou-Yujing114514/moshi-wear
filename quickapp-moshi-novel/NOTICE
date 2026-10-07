@@ -1,0 +1,83 @@
+NOTICE — 摩柿小说快应用（quickapp-moshi-novel）
+==============================================
+
+本快应用为「摩柿小说」小米手环 Vela 快应用，包名 cn.sswwgzs.moshi.novel。
+自 2.0.0 版本起，其【本地阅读引擎、阅读器与阅读相关页面】移植自开源项目
+「弦电子书」（com.bandbbs.ebook.plus）。
+
+来源项目信息
+------------
+  名称：弦电子书（Xian EBook）
+  包名：com.bandbbs.ebook.plus
+  仓库：https://github.com/youshen2/com.bandbbs.ebook
+  参考分支：n67（手环 8 Pro / 9 Pro）
+  许可证：GNU Affero General Public License v3.0（AGPL-3.0）
+  原作者：youshen2（保留全部版权）
+
+许可声明
+--------
+按 AGPL-3.0 第 5 条（基于现有程序的修改版本）要求，本快应用作为「弦电子书」
+的修改/衍生作品，整体以 AGPL-3.0 开源（许可证全文见本目录 LICENSE）。
+所有移植文件均在文件头部保留了来源说明；未获得上游额外授权。
+
+移植清单（下列文件内容来自「弦电子书」，仅在需要处适配摩柿工程）
+----------------------------------------------------------------
+阅读引擎（src/utils/）：
+  bookStorage.js          书架存储（bookshelf.json）
+  chapterManager.js       章节管理（lindex / indexes / content）
+  readingTimeStorage.js   阅读时长统计
+  illustration.js         封面 / 插图存储
+  storage.js              键值存储（文件后端）
+  storageUtils.js         存储容量工具
+  runAsyncFunc.js         异步回调 Promise 化
+  XiaomiError.js          错误类型
+  str2abWrite.js          字符串转 UTF-16LE 字节
+
+组件（src/components/）：
+  number_choose/number_choose.ux   加减数字选择器
+
+阅读页面（src/pages/）：
+  detail/            主阅读器（滑动无缝 + 怀旧分页两种模式）
+  list/              章节列表
+  readPresent/       按章节号跳转（数字键盘）
+  readPercent/       按百分比跳转
+  bookmarks/         书签管理
+  editBookmark/      编辑书签（原依赖自研输入法，已改用原生 input）
+  autoRead/          定时自动翻页
+  confirm/           通用确认弹窗
+  illustrationViewer/ 插图查看器
+  bookinfo/          书籍详情
+  readingTime/       阅读时长统计页
+  detailsetting/     阅读器内菜单
+  textReader/        通用滚动文本查看器（简介等）
+
+阅读设置页（src/pages/）：
+  more/ readingSetting/ fontSetting/ marginSetting/ screenBrightness/
+  readingThemeSetting/ progressBarSetting/ progressBarOpacitySetting/
+  readModeSetting/ chapterSwitchSetting/ chapterSwitchStyle/
+  chapterSwitchSensitivity/ autoReadDistanceSetting/ swipe/ swipeSensitivity/
+  pageSizeSetting/ timeSetting/ progressSavingSetting/ extraContentSetting/
+  opacity/ marqueeSetting/ interactionSetting/ performanceSetting/
+  shelfSetting/ storageManagement/ about/ help/ info/
+
+摩柿原创/新增（非移植）
+----------------------
+  src/common/bridge.js   网桥 FetchBridge 通道（ESP32 帧协议）
+  src/common/http.js     摩柿后端 API 封装
+  src/common/config.js   端点 / 字段映射 / 限制
+  src/common/session.js  会话
+  src/common/reader.js   纯文本工具（formatSize 等）
+  src/Login/             登录页
+  src/Search/            搜书页
+  src/utils/importer.js  下载 TXT → 弦电子书阅读引擎 适配层（本项目新写）
+  src/utils/coverMaker.js  摩柿封面本地生成（无第三方依赖）
+  src/pages/index/       书架（移植弦电子书 index 并改路由）
+  src/pages/downloads/   下载管理（本项目新写）
+
+因数据模式差异未移植
+--------------------
+  · 弦电子书的 interconnect 文件推送（interconnfile.js / interconn.js /
+    handshake.js）：摩柿改走主动 HTTP（网桥 FetchBridge），不采用被动推送。
+  · 弦电子书自研输入法（components/InputMethod）：摩柿登录/搜索/编辑书签
+    改用原生 <input>。
+  · 「双端同步 / 手机端独立阅读」相关页面（pages/push）：无对应场景。

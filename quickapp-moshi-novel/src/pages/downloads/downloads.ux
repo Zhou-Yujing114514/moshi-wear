@@ -1,0 +1,165 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  下载管理页（本应用新增，非移植）：列出摩柿后端的下载任务，把已完成任务的
+  TXT 下载后经 utils/importer.js 导入移植自「弦电子书」的阅读引擎。
+  视觉复用「弦电子书」common/style.css 与 common/images。
+-->
+<template>
+  <div class="page" style="flex-direction: column;">
+
+    <text class="tip" if="{{loading}}" style="position:absolute;top:200px;width:336px;text-align:center;color:rgba(255,255,255,0.6);font-size:28px;">加载中…</text>
+    <text class="tip" if="{{!loading && tasks.length === 0}}" style="position:absolute;top:180px;width:336px;text-align:center;color:rgba(255,255,255,0.6);font-size:28px;line-height:40px;">暂无下载任务，先去搜书提交</text>
+
+    <list class="list" if="{{tasks.length > 0}}">
+      <list-item type="task" for="{{tasks}}" class="item" @click="onRowTap($item)">
+        <text class="itemtext">{{$item.bookName}}</text>
+        <text class="itemtext2">{{$item.subText}}</text>
+      </list-item>
+    </list>
+
+    <text if="{{busy}}" style="position:absolute;top:150px;width:336px;text-align:center;color:#f2c14e;font-size:26px;line-height:38px;">{{busyTip}}</text>
+
+    <img static src="/common/images/hd.png" style="position: absolute;left: 0px;top: 0px;width: 336px;height: 102px;" />
+    <img static src="/common/images/back.png" @click="goBack" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+    <img static src="/common/images/reset.png" @click="loadTasks" style="position: absolute;left: 258px;top: 6px;width: 72px;height: 72px;"/>
+    <text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">下载管理</text>
+  </div>
+</template>
+
+<script>
+import router from '@system.router'
+import prompt from '@system.prompt'
+import config from '../../common/config.js'
+import { request, getText, pickByPath } from '../../common/http.js'
+import { restoreSession, isLoggedIn } from '../../common/session.js'
+import { formatSize } from '../../common/reader.js'
+import importer, { dirNameFor } from '../../utils/importer.js'
+import bookStorage from '../../utils/bookStorage.js'
+
+const STATE_LABEL = {
+  queued: '排队中',
+  running: '下载中',
+  done: '已完成',
+  failed: '失败',
+  canceled: '已取消'
+}
+
+function pickTask(raw, mainKey, fallbackKey) {
+  if (raw[mainKey] != null && raw[mainKey] !== '') return raw[mainKey]
+  return raw[fallbackKey]
+}
+
+export default {
+  private: {
+    tasks: [],
+    loading: false,
+    busy: false,
+    busyTip: ''
+  },
+
+  onShow() {
+    restoreSession().then(() => {
+      if (!isLoggedIn()) {
+        router.replace({ uri: '/login' })
+        return
+      }
+      this.loadTasks()
+    })
+  },
+
+  async loadTasks() {
+    if (this.busy) return
+    this.loading = true
+    try {
+      const res = await request(config.endpoints.bookshelf, { method: 'GET', auth: true })
+      const taskList = pickByPath(res, config.field.booksListPath) || []
+      const books = await bookStorage.getBooks()
+      const imported = {}
+      books.forEach((b) => { imported[b.dirName] = true })
+
+      this.tasks = taskList.map((raw) => {
+        const bookName = pickTask(raw, config.field.bookName, config.field.bookNameFallback) || '未命名'
+        const state = pickTask(raw, config.field.state, config.field.stateFallback) || 'queued'
+        const progress = raw[config.field.progress] != null ? raw[config.field.progress] : 0
+        const downloadUrl = pickTask(raw, config.field.downloadUrl, config.field.downloadUrlFallback) || ''
+        const sourceName = raw[config.field.sourceName] || ''
+        const dn = dirNameFor(bookName)
+        const isImported = !!imported[dn]
+        const canFetch = state === 'done' && !!downloadUrl
+
+        let subText = sourceName + ' · ' + (STATE_LABEL[state] || state)
+        if (state === 'running' || state === 'queued') subText += ' ' + progress + '%'
+        if (isImported) subText = '已导入 · 可回书架阅读'
+        else if (canFetch) subText += ' · 点按导入'
+
+        return {
+          bookName: bookName,
+          state: state,
+          progress: progress,
+          downloadUrl: downloadUrl,
+          imported: isImported,
+          canFetch: canFetch,
+          subText: subText
+        }
+      })
+    } catch (err) {
+      if (String(err.message).indexOf('HTTP 401') >= 0) {
+        router.replace({ uri: '/login' })
+        return
+      }
+      this.tasks = []
+      prompt.showToast({ message: '任务加载失败', duration: 2000 })
+    } finally {
+      this.loading = false
+    }
+  },
+
+  onRowTap(item) {
+    if (this.busy) return
+    if (item.imported) {
+      prompt.showToast({ message: '已导入，回书架阅读', duration: 1500 })
+      return
+    }
+    if (item.state !== 'done' || !item.downloadUrl) {
+      prompt.showToast({
+        message: item.state === 'failed' ? '该书下载失败' : '后台处理中 ' + item.progress + '%',
+        duration: 1500
+      })
+      return
+    }
+    this.downloadAndImport(item)
+  },
+
+  async downloadAndImport(item) {
+    this.busy = true
+    this.busyTip = '下载中…'
+    try {
+      const text = await getText(item.downloadUrl)
+      if (text.length > config.limits.maxBookSizeBytes) {
+        this.busy = false
+        this.busyTip = ''
+        prompt.showToast({ message: '文件 ' + formatSize(text.length) + ' 超过上限', duration: 2500 })
+        return
+      }
+      this.busyTip = '解析章节中…'
+      await importer.importBook({ name: item.bookName, text: text })
+      globalThis.shouldRefreshShelf = true
+      prompt.showToast({ message: '导入成功', duration: 1500 })
+      router.back()
+    } catch (err) {
+      prompt.showToast({ message: '导入失败（直链可能过期）', duration: 2500 })
+    } finally {
+      this.busy = false
+      this.busyTip = ''
+    }
+  },
+
+  goBack() {
+    router.back()
+  }
+}
+</script>
+
+<style>
+  @import '../../common/style.css';
+</style>

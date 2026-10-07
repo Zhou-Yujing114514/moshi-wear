@@ -1,0 +1,185 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<template>
+    <div class="page">
+        <img static src="/common/images/hd.png" style="position: absolute;left: 0px;top: 0px;width: 336px;height: 102px;" />
+        <img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+        <img static if="{{action!=='versionError'}}" src="/common/images/delete.png" @click="confirmAction" style="position: absolute;left: 258px;top: 6px;width: 72px;height: 72px;"/>
+        <text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+            {{nowTime}}
+        </text>
+        <text style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+            {{title}}
+        </text>
+
+        <img static src="/common/images/bin.png" style="position: absolute;left: 104px;top: 146px;width: 128px;height: 128px;" />
+        <text style="position: absolute;left: 0px;top: 298px;width: 336px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">{{confirmText}}</text>
+        <text style="position: absolute;left: 0px;top: 340px;width: 336px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;padding:0 20px;">{{subText}}</text>
+    </div>
+</template>
+
+<script>
+import router from '@system.router'
+import prompt from '@system.prompt'
+import file from '@system.file'
+import app from '@system.app'
+import bookStorage from '../../utils/bookStorage.js'
+import chapterManager from '../../utils/chapterManager.js'
+import readingTimeStorage from '../../utils/readingTimeStorage.js'
+
+export default {
+    private: {
+        nowTime: "00:00",
+        timer: null,
+    },
+    protected: {
+        action: '',
+        cPath: '',
+        title: '请确认',
+        confirmText: '确认执行操作吗？',
+        subText: '此操作不可逆',
+        bookName: '',
+        bookmarkIndex: -1,
+        chapterIndex: -1
+    },
+    
+    onInit() {
+        this.updateTime();
+        this.timer = setInterval(() => {
+            this.updateTime();
+        }, 60000);
+    },
+    
+    onDestroy() {
+        if (this.timer) {
+            clearInterval(this.timer);
+            this.timer = null;
+        }
+    },
+    
+    updateTime() {
+        const date = new Date();
+        let hours = date.getHours();
+        let minutes = date.getMinutes();
+        hours = hours < 10 ? '0' + hours : hours;
+        minutes = minutes < 10 ? '0' + minutes : minutes;
+        this.nowTime = `${hours}:${minutes}`;
+    },
+    
+    back() {
+        if (this.action === 'versionError') {
+            return app.terminate();
+        }
+        router.back();
+    },
+    
+    confirmAction() {
+        switch (this.action) {
+            case 'deleteBook': return this.deleteBook();
+            case 'deleteBookmark': return this.deleteBookmark();
+            case 'deleteChapter': return this.deleteChapter();
+            case 'clearReadingTime': return this.clearReadingTime();
+            default:
+                prompt.showToast({ message: '未知操作' });
+                router.back();
+        }
+    },
+    
+    async deleteBookmark() {
+        if (!this.bookName || this.bookmarkIndex < 0) {
+            prompt.showToast({ message: '参数错误' });
+            return router.back();
+        }
+
+        try {
+            const bookmarks = await bookStorage.getBookmarks(this.bookName);
+            if (bookmarks && bookmarks[this.bookmarkIndex] !== undefined) {
+                bookmarks.splice(this.bookmarkIndex, 1);
+                await bookStorage.setBookmarks(this.bookName, bookmarks);
+                prompt.showToast({ message: '删除成功' });
+            } else {
+                prompt.showToast({ message: '找不到书签' });
+            }
+        } catch (e) {
+            prompt.showToast({ message: '删除失败' });
+        }
+        router.back();
+    },
+    
+    deleteBook() {
+        prompt.showToast({ message: '开始删除...', duration: 500 });
+        if (!this.cPath) {
+            prompt.showToast({ message: '参数错误' });
+            return router.back();
+        }
+        
+        const dirName = this.cPath.split('/').pop();
+        if (!dirName) {
+            prompt.showToast({ message: '书籍目录名无效' });
+            return router.back();
+        }
+
+        file.rmdir({
+            uri: this.cPath,
+            recursive: true,
+            success: () => this.updateBookshelf(dirName),
+            fail: () => this.updateBookshelf(dirName)
+        });
+    },
+    
+    async updateBookshelf(dirName) {
+        if (dirName) {
+            await bookStorage.removeBook(dirName);
+        }
+        prompt.showToast({ message: '删除成功', duration: 1000 });
+        router.replace({ uri: '/pages/index' });
+    },
+    
+    async deleteChapter() {
+        if (!this.bookName || this.chapterIndex < 0) {
+            prompt.showToast({ message: '参数错误' });
+            return router.back();
+        }
+
+        try {
+            const progress = await bookStorage.get(this.bookName);
+            const isCurrentChapter = progress && progress.chapterIndex === this.chapterIndex;
+            
+            await chapterManager.deleteChapter(this.bookName, this.chapterIndex);
+            chapterManager.clearCache(this.bookName);
+            
+            if (isCurrentChapter) {
+                const allChapters = await chapterManager.getAllAvailableChapters(this.bookName);
+                progress.chapterIndex = allChapters.length > 0 ? allChapters[0].index : null;
+                progress.offsetInChapter = 0;
+                progress.scrollOffset = 0;
+                await bookStorage.set(this.bookName, progress);
+            }
+            
+            prompt.showToast({ message: '删除成功' });
+        } catch (e) {
+            prompt.showToast({ message: '删除失败: ' + (e.message || '未知错误') });
+        }
+        router.back();
+    },
+    
+    async clearReadingTime() {
+        try {
+            await readingTimeStorage.clearAllReadingTime();
+            prompt.showToast({ message: '清空成功' });
+        } catch (e) {
+            prompt.showToast({ message: '清空失败' });
+        }
+        router.back();
+    }
+}
+</script>
+
+<style>
+  @import '../../common/style.css';
+</style>

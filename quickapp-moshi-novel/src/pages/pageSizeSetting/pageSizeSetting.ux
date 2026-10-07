@@ -1,0 +1,122 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<import name="number" src="../../components/number_choose/number_choose"></import>
+<template>
+	<div class="page" style="flex-direction: column">
+		<div class="preview-item">
+			<text static style="font-size: 24px; color: white; text-align: left; padding: 20px; lines: 5;">
+				此设置影响翻页时加载的文本量。
+				值越大，每页加载的文本越多，但也可能增加单次加载时间。
+				修改后需重进阅读页生效。
+			</text>
+		</div>
+		<number style="position: absolute; bottom: 6px" max.static="800" min.static="200" step.static="100" unit.static="字节" value="{{pageSize}}" @change="change" name.static="分段大小">
+		</number>
+
+		<img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+		<img static src="/common/images/reset.png" @click="reset" style="position: absolute;left: 258px;top: 6px;width: 72px;height: 72px;"/>
+		<text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+		  {{nowTime}}
+		</text>
+		<text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+			分段大小
+		</text>
+	</div>
+</template>
+
+<script>
+import router from "@system.router";
+import storage from '../../utils/storage.js';
+
+const STORAGE_KEY = "EBOOK_TXTSZPAGE";
+const DEFAULT_SIZE = 400;
+
+export default {
+	private: {
+		pageSize: DEFAULT_SIZE,
+		nowTime: "00:00",
+		timer: null,
+		timeFormat: '24h'
+	},
+	
+	onInit() {
+		storage.get({
+			key: 'EBOOK_TIME_FORMAT',
+			success: (data) => {
+				if(data) this.timeFormat = data;
+				this.updateTime();
+			},
+			fail: () => {
+				this.updateTime();
+			}
+		});
+		
+		this.timer = setInterval(() => {
+			this.updateTime();
+		}, 60000);
+		
+		storage.get({
+			key: STORAGE_KEY,
+			success: (data) => {
+				if (data) {
+					this.pageSize = parseInt(data);
+				}
+			},
+		});
+	},
+	
+	onDestroy() {
+		if (this.timer) {
+			clearInterval(this.timer);
+			this.timer = null;
+		}
+	},
+	
+	updateTime() {
+		const date = new Date();
+		let hours = date.getHours();
+		let minutes = date.getMinutes();
+		
+		minutes = minutes < 10 ? '0' + minutes : minutes;
+		
+		if (this.timeFormat === '12h') {
+			let ampm = hours >= 12 ? '下午' : '上午';
+			hours = hours % 12;
+			hours = hours ? hours : 12;
+			this.nowTime = `${ampm} ${hours}:${minutes}`;
+		} else {
+			hours = hours < 10 ? '0' + hours : hours;
+			this.nowTime = `${hours}:${minutes}`;
+		}
+	},
+	
+	change(e) {
+		this.pageSize = e.detail.value;
+		storage.set({
+			key: STORAGE_KEY,
+			value: this.pageSize.toString(),
+		});
+	},
+	
+	reset() {
+		this.pageSize = DEFAULT_SIZE;
+		storage.set({
+			key: STORAGE_KEY,
+			value: this.pageSize.toString(),
+		});
+	},
+	
+	back() {
+		router.back();
+	}
+};
+</script>
+
+<style>
+  @import '../../common/style.css';
+</style>

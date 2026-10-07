@@ -1,0 +1,161 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<template>
+	<div class="page" style="flex-direction: column;">
+	  <list class="list">
+		<list-item class="item {{onSelect==1?'item2':''}}" @click="select('1')" type="item">
+			<div class="item-content">
+				<text class="itemtext" static>左右滑动</text>
+				<text class="itemtext2" static>左滑切换章节</text>
+			</div>
+			<img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{onSelect==1}}"/>
+		</list-item>
+		  <list-item class="item {{onSelect==2?'item2':''}}" @click="select('2')" type="item">
+			<div class="item-content">
+				<text class="itemtext" static>按钮换章</text>
+				<text class="itemtext2" static>通过按钮切换章节</text>
+			</div>
+			  <img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{onSelect==2}}"/>
+		  </list-item>
+
+		  <list-item class="item {{onSelect==3?'item2':''}}" @click="select('3')" type="item">
+			<div class="item-content">
+				<text class="itemtext" static>越界换章</text>
+				<text class="itemtext2" static>滑动到边缘时切换章节</text>
+			</div>
+			<img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{onSelect==3}}"/>
+		  </list-item>
+	  </list>
+	  
+	  <img static src="/common/images/hd.png" style="position: absolute;left: 0px;top: 0px;width: 336px;height: 102px;" />
+	  <text style="position: absolute;top:-100px;left:0px;">{{txtNum}}</text>
+
+	  <img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+	  <text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+		  {{nowTime}}
+	  </text>
+	  <text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+			换章方式
+	  </text>
+	</div>
+</template>
+
+<script>
+  import router from '@system.router'
+  import storage from '../../utils/storage.js'
+
+  export default {
+	private: {
+		onSelect: 2,
+		txtNum: 0,
+		nowTime: "00:00",
+		timer: null,
+		timeFormat: '24h'
+	},
+	
+	onInit() {
+		storage.get({
+			key: 'EBOOK_TIME_FORMAT',
+			success: (data) => {
+				if(data) this.timeFormat = data;
+				this.updateTime();
+			},
+			fail: () => {
+				this.updateTime();
+			}
+		});
+		this.timer = setInterval(() => {
+			this.updateTime();
+		}, 60000);
+	},
+
+	onShow() {
+	  storage.get({
+		  key: 'EBOOK_CHAPTER_SWITCH_STYLE',
+		  success: (data) => {
+			if (data == "boundary") {
+				this.onSelect = 3;
+			} else if (data == "swipe") {
+				this.onSelect = 1;
+			} else {
+				this.onSelect = 2;
+			}
+			this.updateScene();
+		  },
+		  fail: () => {
+			this.onSelect = 2;
+		  }
+	  })
+	},
+
+	onDestroy() {
+		if (this.timer) {
+			clearInterval(this.timer);
+			this.timer = null;
+		}
+	},
+
+	updateTime() {
+		const date = new Date();
+		let hours = date.getHours();
+		let minutes = date.getMinutes();
+		if (this.timeFormat === '12h') {
+			let ampm = hours >= 12 ? '下午' : '上午';
+			hours = hours % 12;
+			hours = hours ? hours : 12;
+			minutes = minutes < 10 ? '0' + minutes : minutes;
+			this.nowTime = `${ampm} ${hours}:${minutes}`;
+		} else {
+			hours = hours < 10 ? '0' + hours : hours;
+			minutes = minutes < 10 ? '0' + minutes : minutes;
+			this.nowTime = `${hours}:${minutes}`;
+		}
+	},
+
+	select(fun) {
+	  if (fun == '2') {
+		if (this.onSelect != 2) {
+			this.onSelect = 2;
+			storage.set({
+				key: 'EBOOK_CHAPTER_SWITCH_STYLE',
+				value: 'button',
+			});
+		}
+	  } else if (fun == '1') {
+		if (this.onSelect != 1) {
+			this.onSelect = 1;
+			storage.set({
+				key: 'EBOOK_CHAPTER_SWITCH_STYLE',
+				value: 'swipe',
+			});
+		}
+	  } else {
+		if (this.onSelect != 3) {
+			this.onSelect = 3;
+			storage.set({
+				key: 'EBOOK_CHAPTER_SWITCH_STYLE',
+				value: 'boundary',
+			});
+		}
+	  }
+	  this.updateScene();
+	},
+
+	back() {
+		router.back();
+	},
+
+	updateScene() {
+		this.txtNum += 1;
+	}
+  }
+</script>
+
+<style>
+  @import '../../common/style.css';
+</style>

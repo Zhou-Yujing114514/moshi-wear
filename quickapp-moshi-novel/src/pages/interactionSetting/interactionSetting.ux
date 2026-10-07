@@ -1,0 +1,209 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<template>
+    <div class="page" style="flex-direction: column;">
+        <list class="list">
+            <list-item class="item" style="padding: 7px 16px; height: 50px;" type="tip">
+                <text class="section-title" static>时间格式</text>
+            </list-item>
+            <list-item class="item {{timeFormat === '24h' ? 'item2' : ''}}" @click="selectTimeFormat('24h')" type="item">
+                <div class="item-content">
+                    <text class="itemtext" static>24小时制</text>
+                    <text class="itemtext2" static>例如：13:45</text>
+                </div>
+                <img if="{{timeFormat === '24h'}}" src="/common/images/check.png" style="width:40px;height: 40px;" static />
+            </list-item>
+            <list-item class="item {{timeFormat === '12h' ? 'item2' : ''}}" @click="selectTimeFormat('12h')" type="item">
+                <div class="item-content">
+                    <text class="itemtext" static>12小时制</text>
+                    <text class="itemtext2" static>例如：下午 1:45</text>
+                </div>
+                <img if="{{timeFormat === '12h'}}" src="/common/images/check.png" style="width:40px;height: 40px;" static />
+            </list-item>
+
+            <list-item class="item" style="padding: 7px 16px; height: 50px;" type="tip">
+                <text class="section-title" static>手势设置</text>
+            </list-item>
+            <list-item class="item {{gesture === 'single' ? 'item2' : ''}}" @click="selectGesture('single')" type="item">
+                <div class="item-content">
+                    <text class="itemtext" static>单击切换</text>
+                    <text class="itemtext2" static>单击屏幕切换UI</text>
+                </div>
+                <img if="{{gesture === 'single'}}" src="/common/images/check.png" style="width:40px;height: 40px;" static />
+            </list-item>
+            <list-item class="item {{gesture === 'double' ? 'item2' : ''}}" @click="selectGesture('double')" type="item">
+                <div class="item-content">
+                    <text class="itemtext" static>双击切换</text>
+                    <text class="itemtext2" static>双击屏幕切换UI</text>
+                </div>
+                <img if="{{gesture === 'double'}}" src="/common/images/check.png" style="width:40px;height: 40px;" static />
+            </list-item>
+
+            <list-item class="item" style="padding: 7px 16px; height: 50px;" type="tip">
+                <text class="section-title" static>老师屏</text>
+            </list-item>
+            <list-item class="item" @click="toggleTeacherScreen" type="item">
+                <div class="item-content">
+                    <text class="itemtext" static>快速退出应用</text>
+                    <text class="itemtext2" static>连续点击三次屏幕退出</text>
+                </div>
+                <img src="{{teacherScreenEnabled ? '/common/images/Switch_ON.png' : '/common/images/Switch_OFF.png'}}" class="switch"/>
+            </list-item>
+        </list>
+
+        <img static src="/common/images/hd.png" style="position: absolute;left: 0px;top: 0px;width: 336px;height: 102px;" />
+        <img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;" />
+        <text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+            {{nowTime}}
+        </text>
+        <text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+            交互设置
+        </text>
+    </div>
+</template>
+
+<script>
+    import router from '@system.router'
+    import storage from '../../utils/storage.js'
+
+    export default {
+        private: {
+            nowTime: "00:00",
+            timer: null,
+            timeFormat: '24h',
+            gesture: 'single',
+            teacherScreenEnabled: false
+        },
+        
+        updateTime() {
+            const date = new Date();
+            let hours = date.getHours();
+            let minutes = date.getMinutes();
+
+            if (this.timeFormat === '12h') {
+                let ampm = hours >= 12 ? '下午' : '上午';
+                hours = hours % 12;
+                hours = hours ? hours : 12;
+                minutes = minutes < 10 ? '0' + minutes : minutes;
+                this.nowTime = `${ampm} ${hours}:${minutes}`;
+            } else {
+                hours = hours < 10 ? '0' + hours : hours;
+                minutes = minutes < 10 ? '0' + minutes : minutes;
+                this.nowTime = `${hours}:${minutes}`;
+            }
+        },
+        
+        onInit() {
+            storage.get({
+                key: 'EBOOK_TIME_FORMAT',
+                success: (data) => {
+                    if (data) {
+                        this.timeFormat = data;
+                    }
+                    this.updateTime();
+                },
+                fail: () => {
+                    this.updateTime();
+                }
+            });
+            this.timer = setInterval(() => {
+                this.updateTime();
+            }, 1000);
+            
+            storage.get({
+                key: 'EBOOK_GESTURE',
+                success: (data) => {
+                    if (data) {
+                        this.gesture = data;
+                    }
+                },
+                fail: () => {
+                    this.gesture = 'single';
+                }
+            });
+            
+            storage.get({
+                key: 'EBOOK_TEACHER_SCREEN_ENABLED',
+                success: (data) => {
+                    this.teacherScreenEnabled = data === 'true';
+                },
+                fail: () => {
+                    this.teacherScreenEnabled = false;
+                }
+            });
+        },
+        
+        onDestroy() {
+            if (this.timer) {
+                clearInterval(this.timer);
+                this.timer = null;
+            }
+        },
+        
+        selectTimeFormat(format) {
+            if (this.timeFormat === format) {
+                return;
+            }
+            this.timeFormat = format;
+            storage.set({
+                key: 'EBOOK_TIME_FORMAT',
+                value: format
+            });
+            this.updateTime();
+        },
+        
+        selectGesture(gestureType) {
+            if (this.gesture === gestureType) {
+                return;
+            }
+            this.gesture = gestureType;
+            storage.set({
+                key: 'EBOOK_GESTURE',
+                value: gestureType
+            });
+        },
+        
+        toggleTeacherScreen() {
+            const targetState = !this.teacherScreenEnabled;
+            if (targetState) {
+                this.teacherScreenEnabled = true;
+                storage.set({
+                    key: 'EBOOK_TEACHER_SCREEN_ENABLED',
+                    value: 'true'
+                });
+                router.push({
+                    uri: '/pages/help',
+                    params: {
+                        title: '功能提醒',
+                        content: '本功能不能保证在重要情况下确实可用，请尽量不要在学习时间看电子书。'
+                    }
+                });
+            } else {
+                this.teacherScreenEnabled = false;
+                storage.set({
+                    key: 'EBOOK_TEACHER_SCREEN_ENABLED',
+                    value: 'false'
+                });
+            }
+        },
+        
+        back() {
+            router.back();
+        }
+    }
+</script>
+
+<style>
+    @import '../../common/style.css';
+    .section-title {
+        font-size: 24px;
+        line-height: 36px;
+        font-weight: bold;
+        color: rgba(255, 255, 255, 0.5);
+    }
+</style>

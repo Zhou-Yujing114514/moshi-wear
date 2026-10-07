@@ -1,0 +1,135 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<import name="number" src="../../components/number_choose/number_choose"></import>
+<template>
+	<div class="page" style="flex-direction: column;">
+		<div class="preview-item">
+			<text static style="font-size: 31px;font-weight:bold;color: rgba(255, 255, 255, 0.6);text-align: center;margin-bottom:40px;top: 30px;">跟随系统亮度</text>
+			<img static src="/common/images/Switch_ON.png" class="switch2" @click="toggleFollowSystem" if="{{followSystem}}"/>
+			<img static src="/common/images/Switch_OFF.png" class="switch2" @click="toggleFollowSystem" else/>
+			<text style="font-size: 34px;font-weight:bold;color: white;width: 100%;text-align: center;">
+				{{followSystem ? 'ON' : 'OFF'}}
+			</text>
+		</div>
+
+		<number show="{{!followSystem}}" style="position: absolute; bottom: 6px" max.static="255" min.static="20" step.static="1" unit.static="" value="{{brightnessValue}}" @change="change" name.static="自定义亮度">
+		</number>
+
+        <img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+		<text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+		  {{nowTime}}
+		</text>
+		<text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+			屏幕亮度
+		</text>
+	</div>
+</template>
+
+<script>
+import router from "@system.router";
+import storage from '../../utils/storage.js';
+import brightness from '@system.brightness';
+
+const BRIGHTNESS_KEY = "EBOOK_BRIGHTNESS";
+const FOLLOW_SYSTEM_KEY = "EBOOK_BRIGHTNESS_FOLLOW_SYSTEM";
+
+export default {
+	private: {
+		brightnessValue: 128,
+		followSystem: true,
+		nowTime: "00:00",
+		timer: null,
+		timeFormat: '24h'
+	},
+	
+	onInit() {
+		storage.get({
+			key: 'EBOOK_TIME_FORMAT',
+			success: (data) => {
+				if (data) this.timeFormat = data;
+				this.updateTime();
+			},
+			fail: () => this.updateTime()
+		});
+
+		this.timer = setInterval(() => {
+			this.updateTime();
+		}, 60000);
+
+		storage.get({
+            key: FOLLOW_SYSTEM_KEY,
+            success: (data) => {
+                this.followSystem = data !== 'false';
+            }
+        });
+
+		storage.get({
+			key: BRIGHTNESS_KEY,
+			success: (data) => {
+				if (data) this.brightnessValue = parseInt(data);
+			}
+		});
+	},
+
+	onDestroy() {
+		if (this.timer) {
+			clearInterval(this.timer);
+			this.timer = null;
+		}
+	},
+
+	updateTime() {
+		const date = new Date();
+		let hours = date.getHours();
+		let minutes = date.getMinutes();
+		minutes = minutes < 10 ? '0' + minutes : minutes;
+
+		if (this.timeFormat === '12h') {
+			const ampm = hours >= 12 ? '下午' : '上午';
+			hours = hours % 12 || 12;
+			this.nowTime = `${ampm} ${hours}:${minutes}`;
+		} else {
+			hours = hours < 10 ? '0' + hours : hours;
+			this.nowTime = `${hours}:${minutes}`;
+		}
+	},
+
+    toggleFollowSystem() {
+        this.followSystem = !this.followSystem;
+        brightness.setMode({ mode: this.followSystem ? 1 : 0 });
+        
+        if (!this.followSystem) {
+            brightness.setValue({ value: this.brightnessValue });
+        }
+        
+        storage.set({
+            key: FOLLOW_SYSTEM_KEY,
+            value: this.followSystem.toString()
+        });
+    },
+
+	change(e) {
+		this.brightnessValue = e.detail.value;
+        brightness.setMode({ mode: 0 });
+        brightness.setValue({ value: this.brightnessValue });
+		
+		storage.set({
+			key: BRIGHTNESS_KEY,
+			value: this.brightnessValue.toString(),
+		});
+	},
+
+	back() {
+		router.back();
+	}
+};
+</script>
+
+<style>
+  @import '../../common/style.css';
+</style>

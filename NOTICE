@@ -1,0 +1,28 @@
+NOTICE — 摩柿小说 · 小米手环 Vela 生态工程
+=========================================
+
+本仓库包含两个模块：
+
+1. quickapp-moshi-novel/  —— 摩柿小说手环快应用（Vela JS）
+2. esp32-firmware/        —— ESP32 网桥固件（ESP-IDF，C）
+
+许可证
+------
+本仓库整体以 GNU Affero General Public License v3.0（AGPL-3.0）开源，
+许可证全文见根目录 LICENSE。
+
+其中，快应用模块的【本地阅读引擎、阅读器、书签、章节、阅读设置等】自
+2.0.0 版本起移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）：
+
+    上游仓库：https://github.com/youshen2/com.bandbbs.ebook
+    原作者：youshen2（保留全部权利）
+    上游许可证：AGPL-3.0
+
+按 AGPL-3.0 第 5 条要求，移植后的摩柿小说快应用同样以 AGPL-3.0 开源；
+移植文件的完整清单与逐文件来源见 quickapp-moshi-novel/NOTICE。
+
+各模块的构建、使用、未移植项与风险说明见各模块 README 与本目录 README。
+
+商标
+----
+「摩柿小说」为项目自有名称；其余商标归各自所有者。

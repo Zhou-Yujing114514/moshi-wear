@@ -1,0 +1,217 @@
+<!--
+  摩柿小说（cn.sswwgzs.moshi.novel）
+  本文件移植自开源项目「弦电子书」（com.bandbbs.ebook.plus）。
+  上游仓库：https://github.com/youshen2/com.bandbbs.ebook ，原作者保留所有权利。
+  「弦电子书」依据 GNU AGPL-3.0 开源；按协议要求，本文件及整个摩柿小说快应用
+  同样以 AGPL-3.0 开源（见仓库根目录 LICENSE 与 NOTICE）。品牌名仍为「摩柿小说」。
+-->
+<template>
+	<div class="page" style="flex-direction: column;">
+	  <list class="list">
+		<list-item class="item {{readMode === 'scroll' ? 'item2' : ''}}" @click="select('scroll')" type="item">
+			<div class="item-content">
+				<text class="itemtext" static>滚动模式</text>
+				<text class="itemtext2" static>传统滚动阅读方式</text>
+			</div>
+			<img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{readMode === 'scroll'}}"/>
+		</list-item>
+		  <list-item class="item {{readMode === 'nostalgic' ? 'item2' : ''}}" @click="select('nostalgic')" type="item">
+			<div class="item-content">
+				<text class="itemtext" static>怀旧模式</text>
+				<text class="itemtext2" static>一屏一页，点击翻页</text>
+			</div>
+			  <img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{readMode === 'nostalgic'}}"/>
+		  </list-item>
+
+		  <list-item if="{{readMode === 'nostalgic'}}" class="item" style="padding: 7px 16px; height: 50px;" type="tip">
+			  <text class="section-title" static>翻页方式</text>
+		  </list-item>
+		  <list-item if="{{readMode === 'nostalgic'}}" class="item {{nostalgicPageTurnMode === 'swipe' ? 'item2' : ''}}" @click="selectPageTurnMode('swipe')" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>左右滑动</text>
+				  <text class="itemtext2" static>左右滑动翻页</text>
+			  </div>
+			  <img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{nostalgicPageTurnMode === 'swipe'}}"/>
+		  </list-item>
+		  <list-item if="{{readMode === 'nostalgic'}}" class="item {{nostalgicPageTurnMode === 'topBottomSwipe' ? 'item2' : ''}}" @click="selectPageTurnMode('topBottomSwipe')" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>上下滑动</text>
+				  <text class="itemtext2" static>上下滑动翻页</text>
+			  </div>
+			  <img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{nostalgicPageTurnMode === 'topBottomSwipe'}}"/>
+		  </list-item>
+		  <list-item if="{{readMode === 'nostalgic'}}" class="item {{nostalgicPageTurnMode === 'sideClick' ? 'item2' : ''}}" @click="selectPageTurnMode('sideClick')" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>两侧点击</text>
+				  <text class="itemtext2" static>点击左右两侧翻页</text>
+			  </div>
+			  <img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{nostalgicPageTurnMode === 'sideClick'}}"/>
+		  </list-item>
+		  <list-item if="{{readMode === 'nostalgic'}}" class="item {{nostalgicPageTurnMode === 'topBottomClick' ? 'item2' : ''}}" @click="selectPageTurnMode('topBottomClick')" type="item">
+			  <div class="item-content">
+				  <text class="itemtext" static>上下点击</text>
+				  <text class="itemtext2" static>点击上下区域翻页</text>
+			  </div>
+			  <img src="/common/images/check.png" style="width:40px;height: 40px;" if="{{nostalgicPageTurnMode === 'topBottomClick'}}"/>
+		  </list-item>
+	  </list>
+	  
+	  <img static src="/common/images/hd.png" style="position: absolute;left: 0px;top: 0px;width: 336px;height: 102px;" />
+	  <text style="position: absolute;top:-100px;left:0px;">{{txtNum}}</text>
+
+	  <img static src="/common/images/back.png" @click="back" style="position: absolute;left: 6px;top: 6px;width: 72px;height: 72px;"/>
+		<text style="position: absolute;left: 78px;top: 7px;width: 180px;line-height: 32px;font-weight:bold;font-size:24px;color:rgba(255,255,255,0.6);text-align:center;">
+		  {{nowTime}}
+		</text>
+		<text static style="position: absolute;left: 78px;top: 35px;width: 180px;line-height: 42px;font-weight:bold;font-size:32px;color:white;text-align:center;">
+			阅读模式
+		</text>
+	</div>
+</template>
+
+<script>
+  import router from '@system.router'
+  import storage from '../../utils/storage.js'
+
+  export default {
+	private: {
+		readMode: 'scroll',
+		nostalgicPageTurnMode: 'topBottomClick',
+		txtNum: 0,
+		nowTime: "00:00",
+		timer: null,
+		timeFormat: '24h'
+	},
+
+	onInit() {
+		storage.get({
+			key: 'EBOOK_TIME_FORMAT',
+			success: (data) => {
+				if(data) this.timeFormat = data;
+				this.updateTime();
+			},
+			fail: () => {
+				this.updateTime();
+			}
+		});
+		this.timer = setInterval(() => {
+			this.updateTime();
+		}, 1000);
+	},
+
+	onShow() {
+	  storage.get({
+		  key: 'EBOOK_READ_MODE',
+		  success: (data) => {
+			this.readMode = data || 'scroll';
+			if (this.readMode === 'nostalgic') {
+				storage.get({
+					key: 'EBOOK_NOSTALGIC_PAGE_TURN_MODE',
+					success: (modeData) => {
+						this.nostalgicPageTurnMode = modeData || 'topBottomClick';
+						this.updateScene();
+					},
+					fail: () => {
+						this.nostalgicPageTurnMode = 'topBottomClick';
+						this.updateScene();
+					}
+				});
+			} else {
+				this.updateScene();
+			}
+		  },
+		  fail: () => {
+			this.readMode = 'scroll';
+			this.updateScene();
+		  }
+	  });
+	},
+
+	onDestroy() {
+		if (this.timer) {
+			clearInterval(this.timer);
+			this.timer = null;
+		}
+	},
+
+	updateTime() {
+		const date = new Date();
+		let hours = date.getHours();
+		let minutes = date.getMinutes();
+		if (this.timeFormat === '12h') {
+			let ampm = hours >= 12 ? '下午' : '上午';
+			hours = hours % 12;
+			hours = hours ? hours : 12;
+			minutes = minutes < 10 ? '0' + minutes : minutes;
+			this.nowTime = `${ampm} ${hours}:${minutes}`;
+		} else {
+			hours = hours < 10 ? '0' + hours : hours;
+			minutes = minutes < 10 ? '0' + minutes : minutes;
+			this.nowTime = `${hours}:${minutes}`;
+		}
+	},
+
+	select(mode) {
+	  if (this.readMode === mode) return;
+	  
+	  this.readMode = mode;
+	  storage.set({
+		  key: 'EBOOK_READ_MODE',
+		  value: mode,
+	  });
+
+	  if (mode === 'nostalgic') {
+		  storage.get({
+			  key: 'EBOOK_NOSTALGIC_PAGE_TURN_MODE',
+			  success: (modeData) => {
+				  this.nostalgicPageTurnMode = modeData || 'topBottomClick';
+				  this.updateScene();
+			  },
+			  fail: () => {
+				  this.nostalgicPageTurnMode = 'topBottomClick';
+				  this.updateScene();
+			  }
+		  });
+
+		  router.push({
+			  uri: '/pages/help',
+			  params: {
+				  title: '怀旧模式提醒',
+				  content: '怀旧模式不是重点功能，Bug 可能很多，且很大概率不会修复。'
+			  }
+		  });
+	  } else {
+		  this.updateScene();
+	  }
+	},
+
+	selectPageTurnMode(mode) {
+	  if (this.nostalgicPageTurnMode === mode) return;
+	  
+	  this.nostalgicPageTurnMode = mode;
+	  storage.set({
+		  key: 'EBOOK_NOSTALGIC_PAGE_TURN_MODE',
+		  value: mode,
+	  });
+	  this.updateScene();
+	},
+
+	back() {
+		router.back();
+	},
+
+	updateScene() {
+		this.txtNum += 1;
+	}
+  }
+</script>
+
+<style>
+  @import '../../common/style.css';
+  .section-title {
+    font-size: 24px;
+    line-height: 36px;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.5);
+  }
+</style>
