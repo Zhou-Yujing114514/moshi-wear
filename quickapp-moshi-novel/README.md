@@ -89,9 +89,9 @@ quickapp-moshi-novel/
 
 **已确认并已落地（公开观察 + 三轮 SSH 服务器实读 §7/§8/§9 + 沙盒公网实测）：**
 - **【§9 关键：两套隧道两个站点】**
-  - **C 端用户主站（Go，:8080）**：`morax.sswwgzs.cn` / `morax.kdns.fr` —— **`apiBase` 默认**。
+  - **C 端用户主站（Go，:8080）**：`morax.sswwgzs.cn` / `morax.sswwgzs.cn` —— **`apiBase` 默认**。
     沙盒公网实测：HTTP 200、`/api/me` 返回 `{"user":null}`、`/api/login` 仅 POST（GET→404）、`/api/search` GET→200。
-  - **站长自用后台（FastAPI，:8000）**：`novel.sswwgzs.cn` / `dygz.kdns.fr` —— **不是用户端**；
+  - **站长自用后台（FastAPI，:8000）**：`novel.sswwgzs.cn` / `novel.sswwgzs.cn` —— **不是用户端**；
     早先网页调研看到的 `/api/download`、`{results,count}` 等都是该后台接口，**已移出主站默认**。
 - 鉴权：`Authorization: Bearer <token>`（§8.4；HttpOnly cookie 同样可用，本应用统一用 Bearer）。
 - 登录：`POST /api/login`，体 `{username, password}`，响应顶层 `{ token, user }`。

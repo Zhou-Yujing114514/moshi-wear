@@ -49,9 +49,9 @@
 - **唯一未闭环缺口**：`Mis.Payload.packet` 内层对 addr/pkgName 的 QAIC 私有封装格式（需抓包/逆向官方 App），已在固件中做成可配置占位。
 
 ### 后端侧（`shared/backend-api-notes.md`）
-- **三轮服务器只读侦察 + 公网实测确证（§7–§9）**：服务器跑**两套独立 CF 隧道**——① `morax.sswwgzs.cn` / `morax.kdns.fr`（隧道 84682cd5）→ Go 主站（nginx :8080 → Go 容器 tomato-site-app-1）＝ **C 端用户主站**，公网实测 200、`/api/me` 返回 `{"user":null}`；② `novel.sswwgzs.cn` / `dygz.kdns.fr`（隧道 4ffe5f18）→ FastAPI 书源管理工具（:8000）＝ **站长自用后台，非用户端**（网页调研看到的 `/api/download`、`/api/settings`、search 的 `{results,count}` 均出自此后台，勿作为主站接口）。
+- **三轮服务器只读侦察 + 公网实测确证（§7–§9）**：服务器跑**两套独立 CF 隧道**——① `morax.sswwgzs.cn` / `morax.sswwgzs.cn`（隧道 84682cd5）→ Go 主站（nginx :8080 → Go 容器 tomato-site-app-1）＝ **C 端用户主站**，公网实测 200、`/api/me` 返回 `{"user":null}`；② `novel.sswwgzs.cn` / `novel.sswwgzs.cn`（隧道 4ffe5f18）→ FastAPI 书源管理工具（:8000）＝ **站长自用后台，非用户端**（网页调研看到的 `/api/download`、`/api/settings`、search 的 `{results,count}` 均出自此后台，勿作为主站接口）。
 - **Go 主站真实接口（§8.3/§9 实测）**：登录 `POST /api/login`（Bearer token；内存随机串会话、无 JWT、无过期、重启失效，支持 HttpOnly cookie）；`GET /api/me`；`GET /api/search`（响应字段 **`items`**）；**书架＝`GET /api/tasks` 下载任务列表**（`POST /api/tasks` 提交下载，**无 `/api/download`**）；另 `GET /api/bookshelf` 为收藏夹（401，字段待核实）；下载直链 `/dl/{path}`（另有 `GET /api/tasks/{id}/text` 站内正文）；数据为纯 JSON 文件；限流约 5 分钟 15 本、下载链接 TTL 约 24h。
-- QuickApp `config.js` 默认 `apiBase=https://morax.sswwgzs.cn`（备选 `morax.kdns.fr`），端点/字段全部按 Go 主站实测配置；**待用户确证**：裸域 `sswwgzs.cn`（服务器零配置，需 CF 控制台）、C 端主站 vs 站长后台定位、CF Dashboard ingress、DNS 记录。
+- QuickApp `config.js` 默认 `apiBase=https://morax.sswwgzs.cn`（备选 `morax.sswwgzs.cn`），端点/字段全部按 Go 主站实测配置；**待用户确证**：裸域 `sswwgzs.cn`（服务器零配置，需 CF 控制台）、C 端主站 vs 站长后台定位、CF Dashboard ingress、DNS 记录。
 
 ### 设备侧风险与对策（README 已标注）
 - 官方「支持明细」标注小米手环 9/9 Pro **不支持 `@system.fetch` / `@system.request`**；QuickApp 已新增 **bridge 传输通道**（`src/common/bridge.js`，与固件 qaic.c 的 FetchBridge 信封逐字段对齐：`__hs__` 握手、`tag:"fetch"` 请求、`fetch-chunk`+`fetch-ack` 分片流控、text/base64 解码）绕开该限制；`config.js` 的 `transport: 'direct' | 'bridge'` 开关切换，direct（@system.fetch）保留为备选。Vela 侧 `@system.interconnect` 收发原语收敛在 bridge.js 顶部待真机确证填写。
@@ -104,7 +104,7 @@
 | 🔴 签名私钥泄露：`sign/private.pem` 曾被误推公开仓库 | MainAgent 已 `git rm --cached` + `.gitignore` + 线上移除；旧证书整体作废 |
 | 🔴 证书重建 + rpk 重签 | 新自签证书对（CN=`mosshi-quickapp-v2`，指纹 `20:FA:C7:48…`，2036 到期）；release/debug 均用新证书重签覆盖旧包，新 `META-INF/CERT` 与旧包不同；`private.pem` 权限 600 且 `.gitignore` 屏蔽（`git check-ignore` 复核），`certificate.pem` 留仓库；`sign/README.txt` 已更新 |
 | 🟡 CI 打包静默失败（`\|\| true` 吞错、release 依赖仓库私钥） | 去掉 `\|\| true`；CI 只产 debug rpk（工具链调试证书，无需仓库私钥）；正式 release 改为本地受控操作（README「正式签名发布」章节）；可选 GitHub secret 注入（标注可选） |
-| 🟠 config 域名确证 | §9 确证：`apiBase` 默认 `morax.sswwgzs.cn`（公网实测 200），备选 `morax.kdns.fr`；提交下载默认 `POST /api/tasks`（`/api/download` 删除）；search 解析 `items`；`/api/settings` 移除；待用户确证项（裸域/定位/CF 控制台/DNS）列入注释与 README |
+| 🟠 config 域名确证 | §9 确证：`apiBase` 默认 `morax.sswwgzs.cn`（公网实测 200），备选 `morax.sswwgzs.cn`；提交下载默认 `POST /api/tasks`（`/api/download` 删除）；search 解析 `items`；`/api/settings` 移除；待用户确证项（裸域/定位/CF 控制台/DNS）列入注释与 README |
 
 修复后 rpk（均 2026-10-03 重签）：release 23,556 B / SHA256 `a676f188befb2c15c4e010d59a0c30f8f994ded359fe8a778e36be282bdc45be`；debug 30,969 B / SHA256 `a87939ff57fad50be97f2b9f0907aab83a296f85c046934e29dda6780bdc0ab9`；静态校验 JSON 2/2、JS 6/6 全过。
 

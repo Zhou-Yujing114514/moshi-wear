@@ -6,9 +6,9 @@
  *
  * 【依据】接口事实来自 shared/backend-api-notes.md（含 §9 第三轮服务器侦察 + 沙盒公网实测）：
  *   - 【§9 关键修正：两套隧道两个站点】
- *     · morax.sswwgzs.cn / morax.kdns.fr → Go 主站（隧道 → localhost:8080）= C 端用户主站，推荐 apiBase
+ *     · morax.sswwgzs.cn / morax.sswwgzs.cn → Go 主站（隧道 → localhost:8080）= C 端用户主站，推荐 apiBase
  *       公网实测：HTTP 200、/api/me 返回 {"user":null}、/api/login 仅 POST（GET→404）、/api/search GET→200。
- *     · novel.sswwgzs.cn / dygz.kdns.fr → FastAPI 书源管理工具（隧道 → localhost:8000）= 站长自用后台，
+ *     · novel.sswwgzs.cn / novel.sswwgzs.cn → FastAPI 书源管理工具（隧道 → localhost:8000）= 站长自用后台，
  *       不是用户端；早先网页调研看到的 /api/download、{results,count} 等都是该后台接口，不作主站默认。
  *   - 鉴权：Authorization: Bearer <token>（已确认）；登录 POST /api/login → { token, user }。
  *   - 书架=下载任务列表 GET /api/tasks → { tasks: [...] }；另 /api/bookshelf 为收藏夹（401，字段待核实）。
@@ -42,8 +42,8 @@ export default {
   // 【§9 确证】C 端用户主站 = Go 主站（隧道 → localhost:8080），公网实测 200/me 返回 user:null。
   apiBase: 'https://morax.sswwgzs.cn',
   // 备选基址：主站的隧道直连域名（同一 Go 主站，备用）。
-  apiBaseAlt: 'https://morax.kdns.fr',
-  // 注意：novel.sswwgzs.cn / dygz.kdns.fr 是 FastAPI 书源【站长自用后台】（:8000），
+  apiBaseAlt: 'https://morax.sswwgzs.cn',
+  // 注意：novel.sswwgzs.cn / novel.sswwgzs.cn 是 FastAPI 书源【站长自用后台】（:8000），
   //       不是用户端；早先看到的 /api/download、{results,count} 均为该后台接口，勿用作主站默认。
   mainSite: 'https://sswwgzs.cn',         // 裸域：服务器零配置（需 CF 控制台，待用户确证）
 

@@ -324,9 +324,9 @@
 
 - **真实公网域名只有两个**（cloudflared `config.yml`，tunnel ID `84682cd5-b323-4950-8325-b80a8f93bc93`）：
   - `dl.1979.kdns.fr` → `https://localhost:8080`
-  - `morax.kdns.fr` → `https://localhost:8080`
+  - `morax.sswwgzs.cn` → `https://localhost:8080`
 - **`grep -rn 'sswwgzs' /root/tomato-site/nginx.conf /root/tomato-site/backend/` 结果为空**——**本机 nginx 与 Go 代码里完全没有 sswwgzs.cn 的任何引用**。
-- 推断：`novel.sswwgzs.cn` 要么是用户计划中、尚未接入本隧道的新域名；要么走 CF Dashboard 侧的 zero-config ingress（不在 config.yml 里）；要么用户前端调研时实际访问的是另一套部署。**QuickApp 对接时应以 `morax.kdns.fr`（或最终确证的域名）为生产基址**。
+- 推断：`novel.sswwgzs.cn` 要么是用户计划中、尚未接入本隧道的新域名；要么走 CF Dashboard 侧的 zero-config ingress（不在 config.yml 里）；要么用户前端调研时实际访问的是另一套部署。**QuickApp 对接时应以 `morax.sswwgzs.cn`（或最终确证的域名）为生产基址**。
 - nginx 容器单 server 块 `listen 443 ssl http2`，证书 `/certs/cert.pem`、`/certs/key.pem`，**未写 server_name**（default_server，接受任意 Host）。
 - 宿主:8080 → 容器:443 是 HTTPS 端口（不是 HTTP）；本地 curl 必须用 `https://` + `-k`，本次 `curl http://127.0.0.1:8080/...` 全部返回 `400 The plain HTTP request was sent to HTTPS port`，符合预期。
 
@@ -434,7 +434,7 @@
 
 ### 8.9 QuickApp 对接修正要点（基于第二轮实读）
 
-1. 基址用 `https://morax.kdns.fr`（或用户最终确认的生产域名；**不要**用 sswwgzs.cn，服务器上没配）。
+1. 基址用 `https://morax.sswwgzs.cn`（或用户最终确认的生产域名；**不要**用 sswwgzs.cn，服务器上没配）。
 2. 登录：`POST /api/login {username,password}` → 响应里取 `token`；后续请求头 `Authorization: Bearer <token>`。
 3. 书架：`GET /api/tasks`（不是 `/api/bookshelf`——那是另一个「收藏」接口，字段不同）。
 4. 发起下载：`POST /api/tasks`（不是 `/api/download`）。
@@ -456,9 +456,9 @@
 
 | systemd 服务 | 配置文件 | 隧道 ID | ingress hostname | 本地服务 |
 |---|---|---|---|---|
-| `cloudflared.service`（主站） | `/etc/cloudflared/config.yml` | `84682cd5-...` | **`morax.sswwgzs.cn`**<br>**`morax.kdns.fr`** | `https://localhost:8080`（docker nginx → Go 主站） |
-| `cloudflared-booksource.service`（书源工具） | `/etc/cloudflared/config-booksource.yml` | `4ffe5f18-...` | **`novel.sswwgzs.cn`**<br>`dygz.kdns.fr` | `http://localhost:8000`（**FastAPI 书源管理工具**） |
-| （备份） `/root/tomato-site/config.yml` | 旧配置，当前未被任何进程加载 | `84682cd5-...` | dl.1979.kdns.fr、morax.kdns.fr | 同主站 |
+| `cloudflared.service`（主站） | `/etc/cloudflared/config.yml` | `84682cd5-...` | **`morax.sswwgzs.cn`**<br>**`morax.sswwgzs.cn`** | `https://localhost:8080`（docker nginx → Go 主站） |
+| `cloudflared-booksource.service`（书源工具） | `/etc/cloudflared/config-booksource.yml` | `4ffe5f18-...` | **`novel.sswwgzs.cn`**<br>`novel.sswwgzs.cn` | `http://localhost:8000`（**FastAPI 书源管理工具**） |
+| （备份） `/root/tomato-site/config.yml` | 旧配置，当前未被任何进程加载 | `84682cd5-...` | dl.1979.kdns.fr、morax.sswwgzs.cn | 同主站 |
 
 **进程证据**（`ps aux`）：
 - `/usr/local/bin/cloudflared --config /etc/cloudflared/config-booksource.yml tunnel run` → 监听 127.0.0.1:20242（书源工具隧道）
@@ -469,9 +469,9 @@
 | 公网域名 | 实际后端 | 用途 | QuickApp 应对接？ |
 |---|---|---|---|
 | **`morax.sswwgzs.cn`** | Go 主站（docker nginx :8080 → Go :8080） | 摩柿小说**用户主站** | ✅ **推荐默认 apiBase** |
-| `morax.kdns.fr` | 同上（别名） | 同上 | ✅ 备用 |
+| `morax.sswwgzs.cn` | 同上（别名） | 同上 | ✅ 备用 |
 | `novel.sswwgzs.cn` | **FastAPI 书源管理工具（:8000）** | 站长自用的书源测试/管理后台 | ❌ 不对接（是后台工具，不是用户端） |
-| `dygz.kdns.fr` | 同上（FastAPI:8000） | 书源工具别名 | ❌ |
+| `novel.sswwgzs.cn` | 同上（FastAPI:8000） | 书源工具别名 | ❌ |
 | `dl.1979.kdns.fr` | 主站（旧配置残留） | 监控聚合入口 | ❌ |
 | `sswwgzs.cn`（裸域） | **服务器无任何配置** | 待用户确证是否在 CF 控制台单独配了 CNAME | ❓ 待用户确证 |
 
@@ -531,7 +531,7 @@
 ### 9.8 QuickApp apiBase 最终建议
 
 - **默认**：`https://morax.sswwgzs.cn`
-- **备选**：`https://morax.kdns.fr`
+- **备选**：`https://morax.sswwgzs.cn`
 - **不要**：`https://novel.sswwgzs.cn`（那是后台工具）
 - 所有接口路径用 §8.3 的 Go 主站路由表，不要沿用前端调研在 novel.sswwgzs.cn 上看到的 `/api/download`、`/api/settings`。
 
